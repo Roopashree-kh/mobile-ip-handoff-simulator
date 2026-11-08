@@ -12,6 +12,7 @@ import socket
 import threading
 import time
 
+from . import clock
 from . import config as cfgmod
 from . import link
 from .telemetry import Telemetry, disable_udp_connreset
@@ -54,7 +55,7 @@ class Node:
 
     # ---- timers ---------------------------------------------------------------
     def call_later(self, delay_s, fn, *args):
-        t = Timer(time.monotonic() + delay_s, fn, args)
+        t = Timer(clock.mono() + delay_s, fn, args)
         heapq.heappush(self._timers, (t.due, next(self._seq), t))
         return t
 
@@ -104,15 +105,23 @@ class Node:
         self.tel.emit("hello", "%s started" % self.name, role=self.ncfg["role"])
         try:
             while not self._stop:
-                timeout = 0.2
+                wait = 0.2
                 if self._timers:
-                    timeout = max(0.0, min(timeout, self._timers[0][0] - time.monotonic()))
+                    wait = max(0.0, min(wait, self._timers[0][0] - clock.mono()))
                 try:
-                    tag, data, addr = self.q.get(timeout=timeout)
-                    self._dispatch(tag, data, addr)
+                    if wait > 0.02:
+                        # Long wait: block on the queue. Windows rounds this to ~16 ms, which
+                        # is harmless because no timer is due inside that window.
+                        item = self.q.get(timeout=wait - 0.017)
+                    else:
+                        item = self.q.get_nowait()
+                    self._dispatch(*item)
+                    while True:  # drain whatever else has arrived
+                        self._dispatch(*self.q.get_nowait())
                 except queue.Empty:
-                    pass
-                now = time.monotonic()
+                    if 0 < wait <= 0.02:
+                        time.sleep(0.001)  # high-resolution sleep on Python 3.11+
+                now = clock.mono()
                 while self._timers and self._timers[0][0] <= now:
                     _, _, t = heapq.heappop(self._timers)
                     if not t.cancelled:
@@ -183,5 +192,8 @@ class Node:
     def reg_port(self):
         return self.topo.mip["reg_udp_port"]
 
+    def now(self):
+        return clock.now()
+
     def now_ms(self):
-        return time.time() * 1000.0
+        return clock.now_ms()

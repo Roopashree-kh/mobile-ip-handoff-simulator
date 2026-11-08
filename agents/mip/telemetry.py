@@ -10,6 +10,8 @@ import socket
 import sys
 import time
 
+from . import clock
+
 
 def disable_udp_connreset(sock):
     """On Windows an ICMP port-unreachable makes the next recvfrom raise WSAECONNRESET.
@@ -30,7 +32,7 @@ class Telemetry:
         disable_udp_connreset(self.sock)
 
     def emit(self, kind, summary, **fields):
-        ev = {"ts": round(time.time() * 1000, 3), "node": self.node, "kind": kind, "summary": summary}
+        ev = {"ts": round(clock.now_ms(), 3), "node": self.node, "kind": kind, "summary": summary}
         ev.update(fields)
         try:
             data = json.dumps(ev, separators=(",", ":"), default=str).encode()
