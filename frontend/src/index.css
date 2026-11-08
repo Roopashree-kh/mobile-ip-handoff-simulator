@@ -1,0 +1,29 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+html, body, #root { height: 100%; overflow: hidden; }
+body { font-family: "Segoe UI", system-ui, sans-serif; font-size: 13px; }
+
+@layer components {
+  .panel { @apply bg-noc-panel border border-noc-line rounded-md; }
+  .panel-title { @apply text-[11px] font-semibold uppercase tracking-wider text-slate-400 px-3 py-2 border-b border-noc-line flex items-center gap-2; }
+  .btn { @apply px-2.5 py-1 rounded border border-slate-600 bg-slate-800 hover:bg-slate-700 text-slate-100 text-xs disabled:opacity-40 disabled:cursor-not-allowed; }
+  .btn-on { @apply border-sky-500 bg-sky-900/60 hover:bg-sky-800/70; }
+  .btn-warn { @apply border-amber-600 bg-amber-900/40 hover:bg-amber-800/50; }
+  .sel { @apply bg-slate-800 border border-slate-600 rounded px-1.5 py-1 text-xs text-slate-100; }
+  .kv { @apply text-slate-400; }
+  .mono { @apply font-mono; }
+}
+
+.resize-h { width: 4px; background: #1f2937; }
+.resize-h:hover, .resize-h[data-resize-handle-active] { background: #38bdf8; }
+.resize-v { height: 4px; background: #1f2937; }
+.resize-v:hover, .resize-v[data-resize-handle-active] { background: #38bdf8; }
+
+@keyframes dash { to { stroke-dashoffset: -24; } }
+.tunnel-pipe { animation: dash 1.2s linear infinite; }
+
+::-webkit-scrollbar { width: 9px; height: 9px; }
+::-webkit-scrollbar-thumb { background: #334155; border-radius: 4px; }
+::-webkit-scrollbar-track { background: transparent; }
