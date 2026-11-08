@@ -1,0 +1,98 @@
+{
+  "_comment": "Single source of truth for addresses, ports, timers and keys. No other file hard-codes a port.",
+  "localhost": "127.0.0.1",
+  "gateway": {
+    "telemetry_port": 9000,
+    "http_port": 8080,
+    "ring_size": 5000,
+    "pcap_ring_size": 20000
+  },
+  "frontend": {
+    "dev_port": 5173
+  },
+  "backbone": {
+    "label": "Virtual Internet backbone",
+    "router_ip": "10.0.0.1",
+    "delay_ms": 20,
+    "loss_pct": 0
+  },
+  "links": {
+    "home":  { "label": "Home Network",      "prefix": "10.1.0.0/24", "delay_ms": 2,  "loss_pct": 0 },
+    "fa1":   { "label": "Campus Wi-Fi",      "prefix": "10.2.0.0/24", "delay_ms": 4,  "loss_pct": 0 },
+    "fa2":   { "label": "Metro LTE cell",    "prefix": "10.3.0.0/24", "delay_ms": 15, "loss_pct": 0 },
+    "fa3":   { "label": "Airport hotspot",   "prefix": "10.4.0.0/24", "delay_ms": 8,  "loss_pct": 0 },
+    "cnnet": { "label": "Server network",    "prefix": "10.9.0.0/24", "delay_ms": 2,  "loss_pct": 0 }
+  },
+  "nodes": {
+    "ROUTER": { "id": 1, "role": "router", "data_port": 47000, "control_port": 47100 },
+    "HA":     { "id": 2, "role": "home_agent", "ip": "10.1.0.1", "link": "home",
+                "data_port": 47001, "control_port": 47101,
+                "max_lifetime": 60, "max_bindings": 3, "simultaneous_supported": true,
+                "encapsulations": ["ipip", "minimal", "gre"], "reverse_tunnel": true },
+    "FA-1":   { "id": 3, "role": "foreign_agent", "ip": "10.2.0.1", "link": "fa1",
+                "data_port": 47002, "control_port": 47102,
+                "max_lifetime": 30, "max_visitors": 8,
+                "encapsulations": ["ipip", "minimal", "gre"], "reverse_tunnel": true,
+                "require_mf_auth": false, "pending_timeout_s": 7 },
+    "FA-2":   { "id": 4, "role": "foreign_agent", "ip": "10.3.0.1", "link": "fa2",
+                "data_port": 47003, "control_port": 47103,
+                "max_lifetime": 30, "max_visitors": 8,
+                "encapsulations": ["ipip", "minimal", "gre"], "reverse_tunnel": true,
+                "require_mf_auth": false, "pending_timeout_s": 7 },
+    "FA-3":   { "id": 5, "role": "foreign_agent", "ip": "10.4.0.1", "link": "fa3",
+                "data_port": 47004, "control_port": 47104,
+                "max_lifetime": 20, "max_visitors": 8,
+                "encapsulations": ["ipip", "minimal"], "reverse_tunnel": true,
+                "require_mf_auth": false, "pending_timeout_s": 7 },
+    "MN":     { "id": 6, "role": "mobile_node", "home_address": "10.1.0.50", "home_agent": "10.1.0.1",
+                "initial_link": "home", "data_port": 47005, "control_port": 47105,
+                "requested_lifetime": 30, "reg_port": 49434, "echo_every": 5, "clock_skew_s": 0,
+                "colocated_host_octet": 100 },
+    "CN":     { "id": 7, "role": "correspondent", "ip": "10.9.0.10", "link": "cnnet",
+                "data_port": 47006, "control_port": 47106,
+                "stream_rate_pps": 20, "stream_payload_bytes": 120, "stream_port": 5004, "mn_port": 6000 },
+    "EVE":    { "id": 8, "role": "attacker", "ip": "10.4.0.66", "link": "fa3", "promiscuous": true,
+                "data_port": 47007, "control_port": 47107 }
+  },
+  "mobile_ip": {
+    "reg_udp_port": 434,
+    "adv_interval_ms": 1000,
+    "adv_lifetime_factor": 3,
+    "renew_at_fraction": 0.8,
+    "retransmit_initial_ms": 1000,
+    "retransmit_max_ms": 8000,
+    "retransmit_max_attempts": 5,
+    "binding_cache_lifetime_s": 20,
+    "smooth_cache_lifetime_s": 10,
+    "smooth_buffer_packets": 64,
+    "smooth_buffer_age_ms": 3000,
+    "max_tunnel_nesting": 3
+  },
+  "security": {
+    "_comment": "Keys are 128-bit hex strings. SPI values 0-255 are reserved by RFC 3344, so ours start at 256.",
+    "replay_protection": "timestamp",
+    "replay_window_s": 7,
+    "mn_ha": { "spi": 256, "key": "4d6f62696c6549507634486f6d654b31" },
+    "mn_fa": { "spi": 257, "key": "4d6f62696c6549507634466f72654b32" },
+    "fa_ha": {
+      "FA-1": { "spi": 301, "key": "46412d31486f6d654167656e744b6579" },
+      "FA-2": { "spi": 302, "key": "46412d32486f6d654167656e744b6579" },
+      "FA-3": { "spi": 303, "key": "46412d33486f6d654167656e744b6579" }
+    },
+    "ha_cn": { "spi": 400, "key": "48412d434e526f7574654f7074694b31" },
+    "attacker_wrong_key": "00112233445566778899aabbccddeeff"
+  },
+  "defaults": {
+    "route_optimization": false,
+    "smooth_handoff": false,
+    "reverse_tunneling": false,
+    "ingress_filtering": false,
+    "simultaneous_bindings": false,
+    "encapsulation": "ipip",
+    "movement_detection": "prefix",
+    "replay_protection": "timestamp",
+    "colocated_coa": false,
+    "adv_interval_ms": 1000,
+    "time_scale": 1
+  }
+}
