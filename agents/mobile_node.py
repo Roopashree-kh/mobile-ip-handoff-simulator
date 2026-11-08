@@ -482,7 +482,7 @@ class MobileNode(Node):
 
     def finish_handoff(self):
         ho = self.handoff
-        if not ho:
+        if not ho or ho.get("done"):
             return
         now = self.now()
         det = ((ho["t_detect"] or now) - ho["t_attach"]) * 1000

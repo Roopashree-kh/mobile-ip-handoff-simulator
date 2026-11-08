@@ -1,0 +1,54 @@
+{
+  "title": "Replayed request",
+  "description": "The mobile node re-sends an earlier Registration Request unchanged. The HA rejects it with code 133, first in timestamp mode, then in nonce mode.",
+  "steps": [
+    {
+      "reset": true
+    },
+    {
+      "wait": 1500
+    },
+    {
+      "target": "MN",
+      "cmd": "handoff",
+      "args": {
+        "link": "fa1"
+      },
+      "note": "Register normally at Campus Wi-Fi"
+    },
+    {
+      "wait": 3000
+    },
+    {
+      "target": "MN",
+      "cmd": "demo_replay",
+      "note": "Timestamp mode: identification is not newer than the last accepted"
+    },
+    {
+      "wait": 3000
+    },
+    {
+      "set": {
+        "replay_protection": "nonce"
+      },
+      "note": "Switch to nonce-based replay protection (the MN resynchronises once)"
+    },
+    {
+      "wait": 3000
+    },
+    {
+      "target": "MN",
+      "cmd": "demo_replay",
+      "note": "Nonce mode: the old request carries a nonce the HA no longer expects"
+    },
+    {
+      "wait": 3000
+    },
+    {
+      "set": {
+        "replay_protection": "timestamp"
+      }
+    }
+  ],
+  "id": "4_replay"
+}

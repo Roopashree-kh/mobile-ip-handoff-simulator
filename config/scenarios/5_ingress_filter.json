@@ -1,0 +1,56 @@
+{
+  "title": "Ingress filter",
+  "description": "With ingress filtering on the backbone, triangle-routed replies from the MN are dropped. Enabling reverse tunneling fixes it.",
+  "steps": [
+    {
+      "reset": true
+    },
+    {
+      "wait": 1500
+    },
+    {
+      "set": {
+        "ingress_filtering": true,
+        "reverse_tunneling": false
+      },
+      "note": "Backbone now drops packets with a topologically wrong source"
+    },
+    {
+      "target": "CN",
+      "cmd": "stream_start",
+      "args": {
+        "rate": 20
+      }
+    },
+    {
+      "target": "MN",
+      "cmd": "handoff",
+      "args": {
+        "link": "fa1"
+      }
+    },
+    {
+      "wait": 7000
+    },
+    {
+      "note": "MN replies (source 10.1.0.50 leaving 10.2.0.0/24) are dropped. Watch the CN reply counter stay flat."
+    },
+    {
+      "set": {
+        "reverse_tunneling": true
+      },
+      "note": "T flag on: FA-1 tunnels replies to the HA, outer source 10.2.0.1"
+    },
+    {
+      "wait": 7000
+    },
+    {
+      "note": "Replies reach the CN again through the home agent"
+    },
+    {
+      "target": "CN",
+      "cmd": "stream_stop"
+    }
+  ],
+  "id": "5_ingress_filter"
+}

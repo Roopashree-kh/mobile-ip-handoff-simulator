@@ -1,0 +1,70 @@
+{
+  "title": "Triangle vs optimized",
+  "description": "The same stream measured with triangle routing and then with route optimization. Results appear side by side in Analytics.",
+  "steps": [
+    {
+      "reset": true
+    },
+    {
+      "wait": 1500
+    },
+    {
+      "target": "MN",
+      "cmd": "handoff",
+      "args": {
+        "link": "fa2"
+      }
+    },
+    {
+      "wait": 2500
+    },
+    {
+      "target": "CN",
+      "cmd": "stream_start",
+      "args": {
+        "rate": 20
+      }
+    },
+    {
+      "wait": 1000
+    },
+    {
+      "phase": "triangle",
+      "note": "Measuring triangle routing: CN -> HA -> FA-2 -> MN"
+    },
+    {
+      "wait": 10000
+    },
+    {
+      "phase": null
+    },
+    {
+      "set": {
+        "route_optimization": true
+      },
+      "note": "Route optimization on: HA sends a Binding Update to the CN"
+    },
+    {
+      "wait": 1500
+    },
+    {
+      "phase": "optimized",
+      "note": "Measuring optimized routing: CN -> FA-2 -> MN"
+    },
+    {
+      "wait": 10000
+    },
+    {
+      "phase": null
+    },
+    {
+      "target": "CN",
+      "cmd": "stream_stop"
+    },
+    {
+      "summary": true,
+      "note": "Open Analytics for the side-by-side table"
+    }
+  ],
+  "id": "6_triangle_vs_optimized"
+}

@@ -1,0 +1,111 @@
+{
+  "title": "Ping-pong edge",
+  "description": "Rapid flapping between FA-1 and FA-2 to stress movement detection. Run it once with each algorithm.",
+  "steps": [
+    {
+      "reset": true
+    },
+    {
+      "wait": 1500
+    },
+    {
+      "set": {
+        "movement_detection": "prefix"
+      }
+    },
+    {
+      "target": "CN",
+      "cmd": "stream_start",
+      "args": {
+        "rate": 20
+      }
+    },
+    {
+      "target": "MN",
+      "cmd": "handoff",
+      "args": {
+        "link": "fa1"
+      }
+    },
+    {
+      "wait": 3000
+    },
+    {
+      "note": "Prefix-based detection: every flap is detected at once"
+    },
+    {
+      "repeat": 4,
+      "steps": [
+        {
+          "target": "MN",
+          "cmd": "handoff",
+          "args": {
+            "link": "fa2"
+          }
+        },
+        {
+          "wait": 1200
+        },
+        {
+          "target": "MN",
+          "cmd": "handoff",
+          "args": {
+            "link": "fa1"
+          }
+        },
+        {
+          "wait": 1200
+        }
+      ]
+    },
+    {
+      "wait": 2000
+    },
+    {
+      "set": {
+        "movement_detection": "lifetime"
+      }
+    },
+    {
+      "note": "Lifetime-based detection: flaps shorter than the advertisement lifetime are missed"
+    },
+    {
+      "repeat": 4,
+      "steps": [
+        {
+          "target": "MN",
+          "cmd": "handoff",
+          "args": {
+            "link": "fa2"
+          }
+        },
+        {
+          "wait": 1200
+        },
+        {
+          "target": "MN",
+          "cmd": "handoff",
+          "args": {
+            "link": "fa1"
+          }
+        },
+        {
+          "wait": 1200
+        }
+      ]
+    },
+    {
+      "wait": 5000
+    },
+    {
+      "set": {
+        "movement_detection": "prefix"
+      }
+    },
+    {
+      "target": "CN",
+      "cmd": "stream_stop"
+    }
+  ],
+  "id": "2_ping_pong"
+}

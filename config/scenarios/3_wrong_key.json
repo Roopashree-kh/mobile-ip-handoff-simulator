@@ -1,0 +1,35 @@
+{
+  "title": "Wrong shared key",
+  "description": "The mobile node's own registration is signed with a wrong MN-HA key. The HA rejects it with code 131 and keeps the existing binding.",
+  "steps": [
+    {
+      "reset": true
+    },
+    {
+      "wait": 1500
+    },
+    {
+      "target": "MN",
+      "cmd": "handoff",
+      "args": {
+        "link": "fa2"
+      },
+      "note": "Register normally at Metro LTE first"
+    },
+    {
+      "wait": 3000
+    },
+    {
+      "target": "MN",
+      "cmd": "demo_wrong_key",
+      "note": "Registration Request signed with the wrong key"
+    },
+    {
+      "wait": 3000
+    },
+    {
+      "note": "Look for HA 131 in the inspector (filter: reg). The binding table still shows the old valid binding."
+    }
+  ],
+  "id": "3_wrong_key"
+}

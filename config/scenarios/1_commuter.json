@@ -1,0 +1,73 @@
+{
+  "title": "Commuter",
+  "description": "Home, Campus Wi-Fi, Metro LTE, Airport hotspot and back home on a timer while the video stream runs.",
+  "steps": [
+    {
+      "reset": true
+    },
+    {
+      "wait": 1500
+    },
+    {
+      "target": "CN",
+      "cmd": "stream_start",
+      "args": {
+        "rate": 20
+      },
+      "note": "Video stream starts while the MN is at home"
+    },
+    {
+      "wait": 3000
+    },
+    {
+      "target": "MN",
+      "cmd": "handoff",
+      "args": {
+        "link": "fa1"
+      },
+      "note": "Leaves home for Campus Wi-Fi (FA-1)"
+    },
+    {
+      "wait": 8000
+    },
+    {
+      "target": "MN",
+      "cmd": "handoff",
+      "args": {
+        "link": "fa2"
+      },
+      "note": "Boards the metro: Metro LTE cell (FA-2)"
+    },
+    {
+      "wait": 8000
+    },
+    {
+      "target": "MN",
+      "cmd": "handoff",
+      "args": {
+        "link": "fa3"
+      },
+      "note": "Reaches the airport hotspot (FA-3)"
+    },
+    {
+      "wait": 8000
+    },
+    {
+      "target": "MN",
+      "cmd": "handoff",
+      "args": {
+        "link": "home"
+      },
+      "note": "Back home: gratuitous ARP and deregistration"
+    },
+    {
+      "wait": 5000
+    },
+    {
+      "target": "CN",
+      "cmd": "stream_stop",
+      "note": "Commute finished"
+    }
+  ],
+  "id": "1_commuter"
+}

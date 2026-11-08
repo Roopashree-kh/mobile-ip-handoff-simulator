@@ -246,7 +246,12 @@ class ForeignAgent(MobilityAgent):
                     self.name, home, why), home=home)
         else:
             self.counters["dropped"] += 1
-            self.tel.emit("drop", "%s drops a packet for %s: %s" % (self.name, home, why), home=home, lost=True)
+            key = ("drop", home, why)
+            self.note_t[("n",) + key] = self.note_t.get(("n",) + key, 0) + 1
+            if self._rate(key, 0.5):
+                n = self.note_t.pop(("n",) + key)
+                self.tel.emit("drop", "%s drops %s for %s: %s" % (
+                    self.name, "a packet" if n == 1 else "%d packets" % n, home, why), home=home, count=n)
         self.maybe_warn(home, outer_src)
 
     def maybe_warn(self, home, outer_src):
