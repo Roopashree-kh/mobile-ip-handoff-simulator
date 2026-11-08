@@ -1,0 +1,14 @@
+{
+  "name": "mobileip-gateway",
+  "version": "1.0.0",
+  "private": true,
+  "description": "WebSocket gateway for the Mobile IPv4 handoff simulator: telemetry fan-out, commands, scenarios, pcap export",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "engines": { "node": ">=18" },
+  "dependencies": {
+    "ws": "^8.18.0"
+  }
+}
