@@ -2,7 +2,7 @@
 
 ## Ten-minute demo script
 
-Start with `start.bat`, open http://localhost:5173 and press Reset once. Set the speed slider to about 5x for the first two minutes so the examiners can follow single packets, then set it back to real time.
+Start with `start.bat`, open http://localhost:5173 and press Reset once. Set the speed to 5x for the first two minutes so the examiners can follow single packets, then set it back to real time.
 
 | Time | Who | What to do | What to point at |
 |---|---|---|---|

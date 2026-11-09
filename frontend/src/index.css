@@ -3,27 +3,83 @@
 @tailwind utilities;
 
 html, body, #root { height: 100%; overflow: hidden; }
-body { font-family: "Segoe UI", system-ui, sans-serif; font-size: 13px; }
+body {
+  @apply font-sans text-sm text-noc-ink bg-noc-bg antialiased;
+  font-feature-settings: "tnum" 1, "cv11" 1;
+}
 
 @layer components {
-  .panel { @apply bg-noc-panel border border-noc-line rounded-md; }
-  .panel-title { @apply text-[11px] font-semibold uppercase tracking-wider text-slate-400 px-3 py-2 border-b border-noc-line flex items-center gap-2; }
-  .btn { @apply px-2.5 py-1 rounded border border-slate-600 bg-slate-800 hover:bg-slate-700 text-slate-100 text-xs disabled:opacity-40 disabled:cursor-not-allowed; }
-  .btn-on { @apply border-sky-500 bg-sky-900/60 hover:bg-sky-800/70; }
-  .btn-warn { @apply border-amber-600 bg-amber-900/40 hover:bg-amber-800/50; }
-  .sel { @apply bg-slate-800 border border-slate-600 rounded px-1.5 py-1 text-xs text-slate-100; }
-  .kv { @apply text-slate-400; }
+  /* surfaces */
+  .panel { @apply bg-noc-panel border border-noc-line rounded-panel; }
+  .panel-head { @apply h-10 shrink-0 flex items-center gap-2 px-3 border-b border-noc-line; }
+  .panel-title { @apply text-sm font-semibold text-noc-ink; }
+  .section-label { @apply text-2xs font-semibold uppercase tracking-[0.06em] text-noc-mute; }
+
+  /* buttons */
+  .btn {
+    @apply inline-flex items-center justify-center gap-1.5 h-7 px-2.5 rounded-md text-xs font-medium
+      border border-noc-edge bg-noc-raised text-noc-ink transition-colors
+      hover:bg-[#1c2738] hover:border-[#3a475a]
+      disabled:opacity-40 disabled:pointer-events-none;
+  }
+  .btn-primary { @apply bg-sky-600 border-sky-500 text-white hover:bg-sky-500 hover:border-sky-400; }
+  .btn-active { @apply border-sky-500/70 bg-sky-500/15 text-sky-200 hover:bg-sky-500/20 hover:border-sky-400; }
+  .btn-warn { @apply border-amber-500/50 bg-amber-500/10 text-amber-200 hover:bg-amber-500/15 hover:border-amber-400/70; }
+  .btn-ghost { @apply border-transparent bg-transparent hover:bg-noc-raised hover:border-noc-edge; }
+  .icon-btn { @apply btn w-8 h-8 px-0; }
+
+  /* form controls */
+  .sel {
+    @apply h-7 rounded-md border border-noc-edge bg-noc-raised px-2 text-xs text-noc-ink
+      focus:outline-none focus:border-sky-500;
+  }
+  .field { @apply h-7 rounded-md border border-noc-edge bg-noc-bg px-2 text-xs text-noc-ink placeholder:text-noc-mute
+      focus:outline-none focus:border-sky-500; }
+
+  /* data tables */
+  .tbl { @apply w-full text-xs border-collapse; }
+  .tbl th { @apply text-2xs font-medium text-noc-mute text-left px-2 h-6 border-b border-noc-line whitespace-nowrap; }
+  .tbl td { @apply px-2 h-7 whitespace-nowrap; }
+  .tbl tbody tr:nth-child(even) { background: rgba(255, 255, 255, 0.025); }
+  .tbl .num { @apply text-right font-mono; }
+  .tbl-c td, .tbl-c th { @apply text-right font-mono; }
+  .tbl-c td:first-child, .tbl-c th:first-child { @apply text-left; }
+  .tbl-c th { @apply font-sans; }
+
+  .badge { @apply inline-flex items-center h-5 px-1.5 rounded text-2xs font-medium border; }
   .mono { @apply font-mono; }
 }
 
-.resize-h { width: 4px; background: #1f2937; }
-.resize-h:hover, .resize-h[data-resize-handle-active] { background: #38bdf8; }
-.resize-v { height: 4px; background: #1f2937; }
-.resize-v:hover, .resize-v[data-resize-handle-active] { background: #38bdf8; }
+/* tooltips for icon buttons: <button data-tip="..."> */
+[data-tip] { position: relative; }
+[data-tip]:hover::after {
+  content: attr(data-tip);
+  position: absolute; top: calc(100% + 6px); left: 50%; transform: translateX(-50%);
+  white-space: nowrap; padding: 4px 8px; border-radius: 6px;
+  background: #0b1018; border: 1px solid #2b3646; color: #e5e7eb;
+  font-size: 12px; font-weight: 400; z-index: 60; pointer-events: none;
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.45);
+}
 
-@keyframes dash { to { stroke-dashoffset: -24; } }
-.tunnel-pipe { animation: dash 1.2s linear infinite; }
+/* resize handles: hairline that lights up on hover */
+.resize-h { width: 8px; position: relative; }
+.resize-v { height: 8px; position: relative; }
+.resize-h::after, .resize-v::after { content: ""; position: absolute; background: transparent; transition: background 120ms; }
+.resize-h::after { left: 3px; width: 2px; top: 0; bottom: 0; }
+.resize-v::after { top: 3px; height: 2px; left: 0; right: 0; }
+.resize-h:hover::after, .resize-h[data-resize-handle-active]::after,
+.resize-v:hover::after, .resize-v[data-resize-handle-active]::after { background: #38bdf8; }
 
-::-webkit-scrollbar { width: 9px; height: 9px; }
-::-webkit-scrollbar-thumb { background: #334155; border-radius: 4px; }
+/* topology map: a dark halo keeps labels readable where pipes and lines pass under them */
+.topo text { paint-order: stroke; stroke: #0d141f; stroke-width: 3.5px; stroke-linejoin: round; }
+.topo .halo text { stroke: #141e2d; stroke-width: 5px; }
+@keyframes flow { to { stroke-dashoffset: -30; } }
+.pipe-flow { animation: flow 1.4s linear infinite; }
+@keyframes fadein { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
+.fade-in { animation: fadein 220ms ease-out; }
+
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-thumb { background: #263142; border-radius: 6px; border: 2px solid #111827; }
+::-webkit-scrollbar-thumb:hover { background: #334155; }
 ::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-corner { background: transparent; }

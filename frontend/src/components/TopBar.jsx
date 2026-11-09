@@ -1,18 +1,39 @@
-// Top bar: connection, simulation clock, Play/Pause/Step/Reset, speed, scenario picker,
-// Learn mode and the Analytics drawer toggle.
+// Top bar, one row: title | transport controls, speed presets, elapsed time | scenario,
+// Learn mode, Analytics, connection status.
 import React, { useEffect, useState } from 'react';
 import { setState, useStore } from '../lib/store.js';
 import { pause, play, send, setFeature, step } from '../lib/ws.js';
-import { clock } from '../lib/util.js';
+import { Icon, Switch } from './ui.jsx';
 
-function SimClock() {
-  const startedAt = useStore((s) => s.startedAt);
+const SPEEDS = [1, 2, 5, 10, 20];
+
+function Elapsed() {
+  const resetAt = useStore((s) => s.resetAt);
   const [now, setNow] = useState(Date.now());
   useEffect(() => {
-    const t = setInterval(() => setNow(Date.now()), 100);
+    const t = setInterval(() => setNow(Date.now()), 250);
     return () => clearInterval(t);
   }, []);
-  return <span className="mono text-sky-300 tabular-nums">{clock(now - startedAt)}</span>;
+  const s = Math.max(0, Math.floor((now - resetAt) / 1000));
+  const h = Math.floor(s / 3600);
+  const mm = String(Math.floor((s % 3600) / 60)).padStart(2, '0');
+  const ss = String(s % 60).padStart(2, '0');
+  return (
+    <span className="font-mono text-sm text-noc-ink tabular-nums w-14 text-center" data-tip="Elapsed since Reset">
+      {h ? `${h}:` : ''}{mm}:{ss}
+    </span>
+  );
+}
+
+function Logo() {
+  return (
+    <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true">
+      <rect x="1" y="1" width="22" height="22" rx="6" fill="#0c4a6e" />
+      <path d="M6 15.5a8 8 0 0 1 12 0" fill="none" stroke="#38bdf8" strokeWidth="1.8" strokeLinecap="round" />
+      <path d="M8.6 12.6a4.4 4.4 0 0 1 6.8 0" fill="none" stroke="#7dd3fc" strokeWidth="1.8" strokeLinecap="round" />
+      <circle cx="12" cy="17" r="1.6" fill="#e0f2fe" />
+    </svg>
+  );
 }
 
 export default function TopBar() {
@@ -27,49 +48,58 @@ export default function TopBar() {
   const scale = Number(features.time_scale || 1);
 
   return (
-    <header className="flex items-center gap-3 px-3 h-12 border-b border-noc-line bg-[#0d1420] shrink-0">
-      <div className="font-semibold tracking-wide text-slate-100 whitespace-nowrap">
-        Mobile IPv4 <span className="text-sky-400">Handoff Console</span>
-        <span className="ml-2 text-[11px] text-slate-500 font-normal">RFC 3344 foreign agent simulator</span>
-      </div>
-      <span className={`flex items-center gap-1.5 text-xs ${connected ? 'text-emerald-400' : 'text-red-400'}`}>
-        <span className={`w-2 h-2 rounded-full ${connected ? 'bg-emerald-400' : 'bg-red-500 animate-pulse'}`} />
-        {connected ? 'gateway connected' : 'gateway offline'}
-      </span>
-      <span className="text-xs text-slate-400">sim time <SimClock /></span>
-
-      <div className="flex items-center gap-1">
-        {paused
-          ? <button className="btn btn-on" onClick={play} title="Resume and release buffered events">Play</button>
-          : <button className="btn" onClick={pause} title="Freeze the packet view and buffer incoming events">Pause</button>}
-        <button className="btn" onClick={step} disabled={!paused || !buffered} title="Release one buffered event">Step</button>
-        <button className="btn btn-warn" onClick={() => send({ type: 'reset' })} title="Reset every agent and clear captures">Reset</button>
-        {paused && <span className="text-[11px] text-amber-300 ml-1">{buffered} buffered</span>}
+    <header className="h-12 shrink-0 grid grid-cols-[auto_1fr_auto] items-center gap-3 px-4 border-b border-noc-line bg-[#0d131d]">
+      <div className="flex items-center gap-2.5 min-w-0">
+        <Logo />
+        <h1 className="text-base font-semibold text-noc-ink whitespace-nowrap">Mobile IPv4 Handoff<span className="hidden 2xl:inline"> Simulator</span></h1>
+        <span className="badge border-sky-500/40 bg-sky-500/10 text-sky-300 font-mono">RFC 3344</span>
       </div>
 
-      <label className="flex items-center gap-2 text-xs text-slate-400" title="Multiplies every link delay so packets can be followed by eye">
-        speed
-        <input type="range" min="1" max="20" step="1" value={scale}
-          onChange={(e) => setFeature({ time_scale: Number(e.target.value) })} className="w-24 accent-sky-500" />
-        <span className="mono w-14 text-slate-300">{scale === 1 ? 'real' : `${scale}x slow`}</span>
-      </label>
+      <div className="flex items-center justify-center gap-3 min-w-0">
+        <div className="flex items-center gap-1">
+          {paused
+            ? <button className="icon-btn btn-active" onClick={play} data-tip="Play: release buffered events" aria-label="Play"><Icon name="play" /></button>
+            : <button className="icon-btn" onClick={pause} data-tip="Pause: freeze the packet view" aria-label="Pause"><Icon name="pause" /></button>}
+          <button className="icon-btn" onClick={step} disabled={!paused || !buffered} data-tip="Step: release one event" aria-label="Step"><Icon name="step" /></button>
+          <button className="icon-btn" onClick={() => send({ type: 'reset' })} data-tip="Reset every agent and clear captures" aria-label="Reset"><Icon name="reset" /></button>
+        </div>
+        {paused && <span className="badge border-amber-500/40 bg-amber-500/10 text-amber-300 font-mono">{buffered} held</span>}
+        <div className="h-6 w-px bg-noc-line" />
+        <div className="flex items-center gap-2" data-tip="Slow-motion factor applied to every link delay">
+          <span className="hidden 2xl:inline text-2xs text-noc-mute">Speed</span>
+          <div className="flex rounded-md border border-noc-edge overflow-hidden">
+            {SPEEDS.map((v) => (
+              <button key={v} onClick={() => setFeature({ time_scale: v })}
+                className={`h-7 px-2 font-mono text-2xs border-r border-noc-edge last:border-r-0 transition-colors
+                  ${scale === v ? 'bg-sky-500/20 text-sky-200' : 'bg-noc-raised text-noc-dim hover:text-noc-ink hover:bg-[#1c2738]'}`}>
+                {v}x
+              </button>
+            ))}
+          </div>
+        </div>
+        <div className="h-6 w-px bg-noc-line" />
+        <Elapsed />
+      </div>
 
-      <div className="flex items-center gap-1.5 ml-auto">
-        <select className="sel max-w-[13rem]" value={pick} onChange={(e) => setPick(e.target.value)}>
-          <option value="">Scenario...</option>
+      <div className="flex items-center gap-2 justify-end min-w-0">
+        <select className="sel w-36 2xl:w-44" value={pick} onChange={(e) => setPick(e.target.value)} aria-label="Scenario">
+          <option value="">Choose a scenario</option>
           {scenarios.map((s) => <option key={s.id} value={s.id} title={s.description}>{s.title}</option>)}
         </select>
-        <button className="btn btn-on" disabled={!pick} onClick={() => send({ type: 'scenario', id: pick })}>Run</button>
-        <button className="btn" disabled={!scenario} onClick={() => send({ type: 'scenario_stop' })}>Stop</button>
-        {scenario && (
-          <span className="text-[11px] text-sky-300 max-w-[22rem] truncate" title={scenario.note}>
-            {scenario.total ? `step ${scenario.step || 0}/${scenario.total}: ` : ''}{scenario.note}
-          </span>
-        )}
+        {scenario
+          ? <button className="btn btn-warn" onClick={() => send({ type: 'scenario_stop' })}><Icon name="stop" size={14} />Stop</button>
+          : <button className="btn btn-primary" disabled={!pick} onClick={() => send({ type: 'scenario', id: pick })}><Icon name="play" size={14} />Run</button>}
+        <div className="h-6 w-px bg-noc-line mx-1" />
+        <div data-tip="Explain each protocol step with its RFC section">
+          <Switch small checked={learn} onChange={(v) => setState({ learn: v, toasts: [] })} label={<span className="whitespace-nowrap">Learn mode</span>} />
+        </div>
+        <button className="btn" onClick={() => setState({ analyticsOpen: true })}><Icon name="chart" size={14} />Analytics</button>
+        <div className="h-6 w-px bg-noc-line mx-1" />
+        <span className="flex items-center gap-1.5 text-xs text-noc-dim whitespace-nowrap" data-tip={connected ? 'Gateway WebSocket open' : 'Reconnecting to the gateway'}>
+          <span className={`w-2 h-2 rounded-full ${connected ? 'bg-emerald-400 shadow-[0_0_6px_#34d399]' : 'bg-red-500 animate-pulse'}`} />
+          <span className="hidden xl:inline">{connected ? 'Connected' : 'Offline'}</span>
+        </span>
       </div>
-      <button className={`btn ${learn ? 'btn-on' : ''}`} onClick={() => setState({ learn: !learn, toasts: [] })}
-        title="Explain each protocol step with its RFC section">Learn {learn ? 'on' : 'off'}</button>
-      <button className="btn" onClick={() => setState({ analyticsOpen: true })}>Analytics</button>
     </header>
   );
 }

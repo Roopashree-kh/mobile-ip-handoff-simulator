@@ -85,11 +85,11 @@ Then open http://localhost:5173. Press Ctrl+C in the console window to stop ever
 
 ## Using the console
 
-- Top bar: connection state, simulation clock, Play, Pause, Step and Reset, a speed slider that multiplies every link delay so packets can be followed by eye, the scenario picker, Learn mode and the Analytics drawer.
-- Centre: the topology map. Drag the MN onto another network to trigger a real handoff. Dots follow the path each datagram actually took: grey advertisements, amber registration, purple tunneled data, green plain data, cyan binding updates, and red with an X where a packet was dropped. Dashed pipes show the HA tunnel, the CN direct tunnel, the reverse tunnel and smooth handoff forwarding.
-- Left: handoff buttons, feature switches, encapsulation, movement detection rule, replay protection, advertisement interval, link delay and loss, the CN stream and ping, the two security demos, and agent reboot or sequence jump.
-- Right: the MN state machine, the HA binding table with live countdown bars, each FA visitor list with pending entries and smooth handoff state, and the CN binding cache.
-- Bottom: the packet inspector. The filter accepts free text such as `reg`, `icmp`, `tunnel` or `drop`, field tests such as `node==FA-2`, `src==10.1.0.50` or `type==bu`, and negation such as `!adv`. Click a row for the protocol tree and the hex and ASCII dump, and hover a field to highlight its bytes. "Download .pcap" saves the capture.
+- Top bar: Play, Pause, Step and Reset as icon buttons, speed presets from 1x to 20x that multiply every link delay so packets can be followed by eye, the time elapsed since the last Reset, the scenario picker with Run and Stop, the Learn mode switch, the Analytics drawer and the gateway connection dot.
+- Centre: the topology map, which takes most of the screen. The Internet cloud sits in the middle with the home and server networks above it and the three foreign networks below, each link labelled with its delay. Drag the MN onto another network to trigger a real handoff. Dots follow the links each datagram actually crossed: grey advertisements, amber registration, purple tunneled data, green plain data, cyan binding updates, and red with an X where a packet was dropped. Curved pipes show the HA tunnel in purple, the CN direct tunnel in cyan, the reverse tunnel in orange and smooth handoff forwarding in yellow, each named with its encapsulation. The legend sits in the map header.
+- Left: collapsible groups. Mobility has the four networks, with the current one highlighted. Protocol options are switches with a one-line hint each. Tunnel and detection holds the encapsulation, the movement rule and the advertisement interval. Link conditions has delay and loss per link. Traffic, Security (replay protection, the two demos, a forced lifetime) and Agent tools (reboot, sequence jump) follow.
+- Right: the MN state as a stepper from At home to Registered away, with Renewing and Deregistering shown as a badge, the MN details, the HA binding table with lifetime bars, a collapsible card per FA with its visitor list, and the CN binding cache.
+- Bottom: the packet inspector, which collapses to its header bar. Rows are tinted by packet type. The filter accepts free text such as `reg`, `icmp`, `tunnel` or `drop`, field tests such as `node==FA-2`, `src==10.1.0.50` or `type==bu`, and negation such as `!adv`. Click a row for the protocol tree and the hex and ASCII dump, and hover a field to highlight its bytes. "Download .pcap" saves the capture.
 - Analytics: latency per packet with triangle and optimized overlaid, the handoff timeline split into detection and registration, packets lost and rescued per handoff, encapsulation overhead, the scenario phase table and comma-separated values (CSV) export.
 
 The URL hash `#analytics` opens the drawer on load and `#inspect=reg` selects the newest matching packet. We use both for screenshots in the report.
@@ -107,13 +107,17 @@ Pick a scenario in the top bar and press Run. Each one resets the simulation fir
 
 ## Screenshots
 
-Main console with a tunneled packet decoded in the inspector:
+Main console, MN on Metro LTE with route optimization and reverse tunneling on:
 
 ![Console](docs/screenshots/console.png)
 
-Analytics drawer after the Ingress filter scenario:
+Analytics drawer:
 
 ![Analytics](docs/screenshots/analytics.png)
+
+Packet inspector enlarged and paused, with a route-optimized IP-in-IP packet from the CN decoded down to the inner header and its hex dump:
+
+![Inspector](docs/screenshots/inspector.png)
 
 ## Folder structure
 

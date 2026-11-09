@@ -9,6 +9,8 @@ const MAX_LATENCY = 1500;
 const initial = {
   connected: false,
   startedAt: Date.now(),
+  resetAt: Date.now(),
+  inspectorCollapsed: false,
   topology: null,
   features: {},
   states: {},
@@ -67,6 +69,7 @@ export function initFromHello(h) {
     ...state,
     connected: true,
     startedAt: h.startedAt,
+    resetAt: h.resetAt || h.startedAt,
     topology: h.topology,
     features: h.features,
     states: h.states || {},
@@ -124,6 +127,7 @@ export function applyItems(items, animate = true) {
       overhead = {};
       patch.phases = [];
       patch.selectedNo = null;
+      if (it.type === 'reset') patch.resetAt = it.resetAt || Date.now();
       if (it.features) patch.features = it.features;
       continue;
     }

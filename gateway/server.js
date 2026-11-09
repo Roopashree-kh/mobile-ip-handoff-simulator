@@ -30,6 +30,7 @@ const G = topo.gateway;
 const DIST = path.join(ROOT, 'frontend', 'dist');
 const scenarios = loadScenarios(path.join(path.dirname(CONFIG), 'scenarios'));
 const startedAt = Date.now();
+let resetAt = startedAt; // the console clock shows time since the last Reset
 
 // ---- state ----------------------------------------------------------------------
 let ring = [];
@@ -69,7 +70,8 @@ function resetAll() {
   ring = [];
   pcapRing = [];
   metrics.reset();
-  queue({ type: 'reset', features });
+  resetAt = Date.now();
+  queue({ type: 'reset', features, resetAt });
   ingest({ ts: Date.now(), node: 'GATEWAY', kind: 'config', summary: 'simulation reset to topology defaults' });
 }
 
@@ -141,7 +143,7 @@ function publicTopology() {
 
 function hello() {
   return {
-    type: 'hello', startedAt, topology: publicTopology(), features, states,
+    type: 'hello', startedAt, resetAt, topology: publicTopology(), features, states,
     scenarios: scenarios.map(({ id, title, description }) => ({ id, title, description })),
     scenario: runner.status(), events: ring.slice(-1500), metrics: metrics.snapshot(),
   };

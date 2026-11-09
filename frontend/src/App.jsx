@@ -1,9 +1,9 @@
 // Single-screen network operations console. Resizable panels:
 //   top bar
-//   [ controls | topology map | agent state ]
-//   [ packet inspector (full width)          ]
+//   [ controls | topology map (hero) | agent state ]
+//   [ packet inspector, collapsible to its header bar ]
 // plus the Analytics slide-out drawer and Learn mode toasts.
-import React from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Panel, PanelGroup, PanelResizeHandle } from 'react-resizable-panels';
 import TopBar from './components/TopBar.jsx';
 import ControlPanel from './components/ControlPanel.jsx';
@@ -13,28 +13,55 @@ import PacketInspector from './components/PacketInspector.jsx';
 import AnalyticsDrawer from './components/AnalyticsDrawer.jsx';
 import LearnToasts from './components/LearnToasts.jsx';
 
+const BAR_PX = 42; // inspector header plus its border, the height of the collapsed bar
+// narrower screens give the side panels a larger share so their tables still fit
+const WIDE = typeof window === 'undefined' || window.innerWidth >= 1600;
+const SIZES = WIDE ? [18, 60, 22] : [20, 52, 28];
+
 export default function App() {
+  const area = useRef(null);
+  const inspector = useRef(null);
+  const [barPct, setBarPct] = useState(5);
+  const [collapsed, setCollapsed] = useState(false);
+
+  useEffect(() => {
+    const el = area.current;
+    const ro = new ResizeObserver(() => setBarPct(Math.min(20, (BAR_PX / Math.max(200, el.clientHeight)) * 100)));
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+
+  const toggle = () => {
+    const p = inspector.current;
+    if (!p) return;
+    if (p.isCollapsed()) p.expand();
+    else p.collapse();
+  };
+
   return (
     <div className="h-full flex flex-col">
       <TopBar />
-      <div className="flex-1 min-h-0 p-1.5">
-        <PanelGroup direction="vertical" autoSaveId="noc-v">
-          <Panel defaultSize={62} minSize={30}>
-            <PanelGroup direction="horizontal" autoSaveId="noc-h">
-              <Panel defaultSize={19} minSize={14}><ControlPanel /></Panel>
-              <PanelResizeHandle className="resize-h mx-0.5" />
-              <Panel defaultSize={55} minSize={30}>
+      <div ref={area} className="flex-1 min-h-0 p-2">
+        <PanelGroup direction="vertical" autoSaveId="noc2-v">
+          <Panel defaultSize={70} minSize={35}>
+            <PanelGroup direction="horizontal" autoSaveId={WIDE ? 'noc2-h' : 'noc2-h-narrow'}>
+              <Panel defaultSize={SIZES[0]} minSize={14} maxSize={28}><ControlPanel /></Panel>
+              <PanelResizeHandle className="resize-h" />
+              <Panel defaultSize={SIZES[1]} minSize={35}>
                 <div className="relative h-full">
                   <TopologyMap />
                   <LearnToasts />
                 </div>
               </Panel>
-              <PanelResizeHandle className="resize-h mx-0.5" />
-              <Panel defaultSize={26} minSize={16}><AgentPanel /></Panel>
+              <PanelResizeHandle className="resize-h" />
+              <Panel defaultSize={SIZES[2]} minSize={16} maxSize={34}><AgentPanel /></Panel>
             </PanelGroup>
           </Panel>
-          <PanelResizeHandle className="resize-v my-0.5" />
-          <Panel defaultSize={38} minSize={15}><PacketInspector /></Panel>
+          <PanelResizeHandle className="resize-v" />
+          <Panel ref={inspector} defaultSize={30} minSize={14} collapsible collapsedSize={barPct}
+            onCollapse={() => setCollapsed(true)} onExpand={() => setCollapsed(false)}>
+            <PacketInspector collapsed={collapsed} onToggle={toggle} />
+          </Panel>
         </PanelGroup>
       </div>
       <AnalyticsDrawer />
