@@ -2,7 +2,7 @@
 
 // Animation colours by packet type (topology map dots and inspector row accents).
 export const PTYPE_COLOR = {
-  adv: '#9ca3af',     // agent advertisement / solicitation: grey
+  adv: '#8a94a3',     // agent advertisement / solicitation: grey
   reg: '#f59e0b',     // registration: amber
   tunnel: '#a855f7',  // tunneled data: purple
   data: '#22c55e',    // plain data: green
@@ -15,7 +15,7 @@ export const PTYPE_COLOR = {
 export const PTYPE_LABEL = { adv: 'Advertisement', reg: 'Registration', tunnel: 'Tunneled data', data: 'Plain data',
   bu: 'Binding update', arp: 'ARP', icmp: 'ICMP', drop: 'Dropped' };
 
-// Chart series colours, validated (dataviz validate_palette.js, dark mode, surface #111827).
+// Chart series colours, validated with the dataviz validate_palette.js script on a light surface.
 export const SERIES = { s1: '#3987e5', s2: '#d95926', s3: '#199e70', s4: '#c98500' };
 
 /**

@@ -2,7 +2,7 @@
 //   top bar
 //   [ controls | topology map (hero) | agent state ]
 //   [ packet inspector, collapsible to its header bar ]
-// plus the Analytics slide-out drawer and Learn mode toasts.
+// plus the Analytics slide-out drawer. Learn mode entries live in the bottom panel.
 import React, { useEffect, useRef, useState } from 'react';
 import { Panel, PanelGroup, PanelResizeHandle } from 'react-resizable-panels';
 import TopBar from './components/TopBar.jsx';
@@ -11,7 +11,6 @@ import TopologyMap from './components/TopologyMap.jsx';
 import AgentPanel from './components/AgentPanel.jsx';
 import PacketInspector from './components/PacketInspector.jsx';
 import AnalyticsDrawer from './components/AnalyticsDrawer.jsx';
-import LearnToasts from './components/LearnToasts.jsx';
 
 const BAR_PX = 42; // inspector header plus its border, the height of the collapsed bar
 // narrower screens give the side panels a larger share so their tables still fit
@@ -42,16 +41,13 @@ export default function App() {
     <div className="h-full flex flex-col">
       <TopBar />
       <div ref={area} className="flex-1 min-h-0 p-2">
-        <PanelGroup direction="vertical" autoSaveId="noc2-v">
+        <PanelGroup direction="vertical" autoSaveId="lt-v">
           <Panel defaultSize={70} minSize={35}>
-            <PanelGroup direction="horizontal" autoSaveId={WIDE ? 'noc2-h' : 'noc2-h-narrow'}>
+            <PanelGroup direction="horizontal" autoSaveId={WIDE ? 'lt-h' : 'lt-h-narrow'}>
               <Panel defaultSize={SIZES[0]} minSize={14} maxSize={28}><ControlPanel /></Panel>
               <PanelResizeHandle className="resize-h" />
               <Panel defaultSize={SIZES[1]} minSize={35}>
-                <div className="relative h-full">
-                  <TopologyMap />
-                  <LearnToasts />
-                </div>
+                <TopologyMap />
               </Panel>
               <PanelResizeHandle className="resize-h" />
               <Panel defaultSize={SIZES[2]} minSize={16} maxSize={34}><AgentPanel /></Panel>

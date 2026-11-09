@@ -28,7 +28,7 @@ const initial = {
   buffered: [],
   selectedNo: null,
   learn: false,
-  toasts: [],
+  walkthrough: [],
   analyticsOpen: false,
   lastNo: 0,
 };
@@ -36,8 +36,9 @@ const initial = {
 let state = initial;
 const subs = new Set();
 const packetListeners = new Set();
+const MAX_WALK = 300;
 const recentLearn = new Map();
-let toastId = 0;
+let walkId = 0;
 
 export const getState = () => state;
 
@@ -109,7 +110,7 @@ export function applyItems(items, animate = true) {
   let states = null;
   const patch = {};
   const animateList = [];
-  const toasts = [];
+  const walk = [];
 
   for (const it of items) {
     if (it.type === 'state') {
@@ -127,6 +128,8 @@ export function applyItems(items, animate = true) {
       overhead = {};
       patch.phases = [];
       patch.selectedNo = null;
+      patch.walkthrough = [];
+      recentLearn.clear();
       if (it.type === 'reset') patch.resetAt = it.resetAt || Date.now();
       if (it.features) patch.features = it.features;
       continue;
@@ -173,7 +176,7 @@ export function applyItems(items, animate = true) {
       const last = recentLearn.get(key) || 0;
       if (ev.ts - last > 20000) {
         recentLearn.set(key, ev.ts);
-        toasts.push({ id: ++toastId, node: ev.node, title: ev.summary, text: ev.learn, rfc: ev.rfc });
+        walk.push({ id: ++walkId, ts: ev.ts, node: ev.node, title: ev.summary, text: ev.learn, rfc: ev.rfc });
       }
     }
   }
@@ -183,7 +186,7 @@ export function applyItems(items, animate = true) {
   if (handoffs) patch.handoffs = handoffs;
   if (overhead) patch.overhead = overhead;
   if (states) patch.states = states;
-  if (toasts.length) patch.toasts = [...s.toasts, ...toasts].slice(-4);
+  if (walk.length) patch.walkthrough = [...(patch.walkthrough || s.walkthrough), ...walk].slice(-MAX_WALK);
   setState(patch);
   if (animateList.length) {
     const list = animateList.length > 60 ? animateList.slice(-60) : animateList;
@@ -191,6 +194,8 @@ export function applyItems(items, animate = true) {
   }
 }
 
-export function dismissToast(id) {
-  setState((s) => ({ toasts: s.toasts.filter((t) => t.id !== id) }));
+/** Learn mode on or off. Turning it on starts the walkthrough's repeat filter afresh. */
+export function setLearn(on) {
+  if (on) recentLearn.clear();
+  setState({ learn: on });
 }

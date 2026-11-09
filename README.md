@@ -85,18 +85,18 @@ Then open http://localhost:5173. Press Ctrl+C in the console window to stop ever
 
 ## Using the console
 
-- Top bar: Play, Pause, Step and Reset as icon buttons, speed presets from 1x to 20x that multiply every link delay so packets can be followed by eye, the time elapsed since the last Reset, the scenario picker with Run and Stop, the Learn mode switch, the Analytics drawer and the gateway connection dot.
-- Centre: the topology map, which takes most of the screen. The Internet cloud sits in the middle with the home and server networks above it and the three foreign networks below, each link labelled with its delay. Drag the MN onto another network to trigger a real handoff. Dots follow the links each datagram actually crossed: grey advertisements, amber registration, purple tunneled data, green plain data, cyan binding updates, and red with an X where a packet was dropped. Curved pipes show the HA tunnel in purple, the CN direct tunnel in cyan, the reverse tunnel in orange and smooth handoff forwarding in yellow, each named with its encapsulation. The legend sits in the map header.
-- Left: collapsible groups. Mobility has the four networks, with the current one highlighted. Protocol options are switches with a one-line hint each. Tunnel and detection holds the encapsulation, the movement rule and the advertisement interval. Link conditions has delay and loss per link. Traffic, Security (replay protection, the two demos, a forced lifetime) and Agent tools (reboot, sequence jump) follow.
-- Right: the MN state as a stepper from At home to Registered away, with Renewing and Deregistering shown as a badge, the MN details, the HA binding table with lifetime bars, a collapsible card per FA with its visitor list, and the CN binding cache.
-- Bottom: the packet inspector, which collapses to its header bar. Rows are tinted by packet type. The filter accepts free text such as `reg`, `icmp`, `tunnel` or `drop`, field tests such as `node==FA-2`, `src==10.1.0.50` or `type==bu`, and negation such as `!adv`. Click a row for the protocol tree and the hex and ASCII dump, and hover a field to highlight its bytes. "Download .pcap" saves the capture.
+- Toolbar: Play, Pause, Step and Reset as icon buttons, a speed control from 1x to 20x that multiplies every link delay so packets can be followed by eye, the time elapsed since the last Reset, the scenario picker with Run and Stop, the Learn mode check box, the Analytics drawer, and the gateway connection status at the far right.
+- Centre: the topology map, which takes most of the screen. The Internet cloud sits in the middle with the home and server networks above it and the three foreign networks below. Each network keeps its name and prefix in its top-left corner. In a foreign network the FA sits in the left half and the MN has a reserved slot in the right half, so the two never cover each other. Each link is labelled with its delay beside its midpoint, and a delay label that would touch any other label is left out (the value is still under Link conditions). Drag the MN onto another network to trigger a real handoff. Dots follow the links each datagram actually crossed: grey advertisements, amber registration, purple tunneled data, green plain data, cyan binding updates, and red with an X where a packet was dropped. Curved pipes show the HA tunnel in purple, the CN direct tunnel in cyan, the reverse tunnel in orange and smooth handoff forwarding in yellow, each named with its encapsulation on a label next to the cloud. The legend sits under the map. The router's forwarded and dropped counters are in the Agent state panel.
+- Left: collapsible groups. Mobility has the four networks, with the current one highlighted. Protocol options are check boxes with a one-line hint each. Tunnel and detection holds the encapsulation, the movement rule and the advertisement interval. Link conditions has delay and loss per link. Traffic, Security (replay protection, the two demos, a forced lifetime) and Agent tools (reboot, sequence jump) follow.
+- Right: the MN state as a stepper from At home to Registered away, with Renewing and Deregistering shown as a badge, and the MN details. Binding tables holds the HA mobility bindings with lifetime bars and each FA's visitor list. The CN binding cache and the core router counters follow.
+- Bottom: a panel that collapses to its header bar, with three tabs. Packets is the packet inspector. Protocol events is the agents' event log. Protocol walkthrough lists the Learn mode explanations, one row per protocol step with the node, the RFC section, a headline and the explanation, newest at the bottom. Switching Learn mode on brings this tab to the front. In Packets, rows are tinted by packet type. The filter accepts free text such as `reg`, `icmp`, `tunnel` or `drop`, field tests such as `node==FA-2`, `src==10.1.0.50` or `type==bu`, and negation such as `!adv`. Click a row for the protocol tree and the hex and ASCII dump, and hover a field to highlight its bytes. "Download .pcap" saves the capture.
 - Analytics: latency per packet with triangle and optimized overlaid, the handoff timeline split into detection and registration, packets lost and rescued per handoff, encapsulation overhead, the scenario phase table and comma-separated values (CSV) export.
 
 The URL hash `#analytics` opens the drawer on load and `#inspect=reg` selects the newest matching packet. We use both for screenshots in the report.
 
 ## Scenario walkthroughs
 
-Pick a scenario in the top bar and press Run. Each one resets the simulation first and narrates its steps in the top bar and the event log.
+Pick a scenario in the top bar and press Run. Each one resets the simulation first and narrates its steps in the topology header and the event log.
 
 1. Commuter. The MN goes home, Campus Wi-Fi, Metro LTE, Airport and home again, eight seconds apart, with the video stream running. Watch the binding move and the losses per handoff in Analytics.
 2. Ping-pong edge. The MN flaps between FA-1 and FA-2 every 1.2 s, first with prefix-based detection and then with lifetime-based detection. The prefix rule follows every flap. The lifetime rule lags because it waits up to three advertisement intervals.
@@ -107,15 +107,19 @@ Pick a scenario in the top bar and press Run. Each one resets the simulation fir
 
 ## Screenshots
 
-Main console, MN on Metro LTE with route optimization and reverse tunneling on:
+Main console, MN at home:
 
 ![Console](docs/screenshots/console.png)
+
+MN at the Airport (FA-3) with Learn mode on. The walkthrough was stepped with Pause and Step so it stops at six entries, and the panel is scrolled to the newest:
+
+![Learn mode](docs/screenshots/learn.png)
 
 Analytics drawer:
 
 ![Analytics](docs/screenshots/analytics.png)
 
-Packet inspector enlarged and paused, with a route-optimized IP-in-IP packet from the CN decoded down to the inner header and its hex dump:
+Packet inspector enlarged and paused, with an IP-in-IP packet from the HA to FA-2 selected. The outer header is folded so the encapsulation and inner header show, above the hex dump. The map scales down to make room:
 
 ![Inspector](docs/screenshots/inspector.png)
 

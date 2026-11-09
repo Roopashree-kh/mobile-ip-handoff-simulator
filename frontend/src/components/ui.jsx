@@ -24,20 +24,16 @@ export function Icon({ name, size = 16, className = '' }) {
   );
 }
 
-/** Toggle switch. Renders as role="switch" so it is keyboard and screen reader friendly. */
+/** Standard checkbox with a label and an optional one-line hint underneath. */
 export function Switch({ checked, onChange, label, hint, small = false }) {
   return (
-    <label className={`flex items-start gap-2.5 cursor-pointer group ${small ? '' : 'py-1.5'}`}>
-      <button type="button" role="switch" aria-checked={!!checked} onClick={() => onChange(!checked)}
-        className={`relative mt-0.5 shrink-0 w-7 h-4 rounded-full transition-colors duration-150
-          ${checked ? 'bg-sky-500' : 'bg-[#2b3646] group-hover:bg-[#364357]'}`}>
-        <span className={`absolute top-0.5 left-0.5 w-3 h-3 rounded-full bg-white shadow transition-transform duration-150
-          ${checked ? 'translate-x-3' : ''}`} />
-      </button>
+    <label className={`flex items-start gap-2 cursor-pointer ${small ? '' : 'py-1'}`}>
+      <input type="checkbox" checked={!!checked} onChange={(e) => onChange(e.target.checked)}
+        className="mt-[3px] w-[14px] h-[14px] shrink-0 accent-[#2457a6] cursor-pointer" />
       {(label || hint) && (
         <span className="min-w-0">
-          {label && <span className={`block ${small ? 'text-xs' : 'text-sm'} text-noc-ink leading-5`}>{label}</span>}
-          {hint && <span className="block text-2xs text-noc-mute leading-4">{hint}</span>}
+          {label && <span className="block text-sm text-noc-ink leading-5">{label}</span>}
+          {hint && <span className="block text-xs text-noc-dim leading-4 mt-0.5">{hint}</span>}
         </span>
       )}
     </label>
@@ -49,13 +45,13 @@ export function Section({ title, right, children, defaultOpen = true, flush = fa
   const [open, setOpen] = useState(defaultOpen);
   return (
     <section className="border-b border-noc-line last:border-b-0">
-      <button type="button" onClick={() => setOpen(!open)}
-        className="w-full flex items-center gap-2 px-3 h-9 text-left hover:bg-white/[0.02]">
+      <button type="button" onClick={() => setOpen(!open)} aria-expanded={open}
+        className="w-full flex items-center gap-2 px-4 h-10 text-left hover:bg-noc-raised">
+        <Icon name="chevron" size={14} className={`text-noc-dim transition-transform ${open ? '' : '-rotate-90'}`} />
         <span className="section-label">{title}</span>
-        <span className="ml-auto flex items-center gap-2 text-2xs text-noc-mute">{right}</span>
-        <Icon name="chevron" size={14} className={`text-noc-mute transition-transform ${open ? '' : '-rotate-90'}`} />
+        <span className="ml-auto flex items-center gap-2 text-xs text-noc-dim">{right}</span>
       </button>
-      {open && <div className={flush ? 'pb-2' : 'px-3 pb-3'}>{children}</div>}
+      {open && <div className={flush ? 'pb-4' : 'px-4 pb-4'}>{children}</div>}
     </section>
   );
 }
@@ -73,15 +69,15 @@ export function useNow(ms = 250) {
 export function LifeBar({ expiresAt, lifetime, now }) {
   const left = Math.max(0, (expiresAt - now) / 1000);
   const frac = lifetime ? Math.min(1, left / lifetime) : 0;
-  const tone = frac > 0.2 ? 'bg-sky-400' : 'bg-amber-400';
+  const tone = frac > 0.2 ? 'bg-acc' : 'bg-[#c98500]';
   return (
     <div className="flex items-center gap-2 min-w-[84px]">
-      <div className="flex-1 h-1 rounded-full bg-[#243042] overflow-hidden">
+      <div className="flex-1 h-1 rounded-full bg-[#e3e7ec] overflow-hidden">
         <div className={`h-full rounded-full ${tone} transition-[width] duration-300 ease-linear`} style={{ width: `${frac * 100}%` }} />
       </div>
-      <span className="font-mono text-2xs text-noc-dim w-10 text-right tabular-nums">{left.toFixed(1)}s</span>
+      <span className="font-mono text-xs text-noc-dim w-12 text-right tabular-nums">{left.toFixed(1)}s</span>
     </div>
   );
 }
 
-export const Empty = ({ children }) => <div className="text-xs text-noc-mute py-1">{children}</div>;
+export const Empty = ({ children }) => <div className="text-sm text-noc-mute">{children}</div>;

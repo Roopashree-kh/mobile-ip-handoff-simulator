@@ -22,12 +22,12 @@ function Slider({ label, value, min, max, step, unit, onCommit }) {
   const [v, setV] = useState(value);
   useEffect(() => setV(value), [value]);
   return (
-    <label className="block mb-2.5 last:mb-0">
+    <label className="block mb-3 last:mb-0">
       <div className="flex justify-between items-baseline mb-1">
-        <span className="text-xs text-noc-dim">{label}</span>
+        <span className="text-sm text-noc-ink">{label}</span>
         <span className="font-mono text-xs text-noc-ink tabular-nums">{v}<span className="text-noc-mute">{unit}</span></span>
       </div>
-      <input type="range" className="w-full h-1 accent-sky-500 cursor-pointer" min={min} max={max} step={step} value={v}
+      <input type="range" className="w-full accent-[#2457a6] cursor-pointer" min={min} max={max} step={step} value={v}
         onChange={(e) => setV(Number(e.target.value))}
         onPointerUp={() => onCommit(v)} onKeyUp={() => onCommit(v)} />
     </label>
@@ -36,8 +36,8 @@ function Slider({ label, value, min, max, step, unit, onCommit }) {
 
 function Field({ label, children }) {
   return (
-    <label className="grid grid-cols-[96px_1fr] items-center gap-2 mb-2 last:mb-0">
-      <span className="text-xs text-noc-dim">{label}</span>
+    <label className="grid grid-cols-[104px_minmax(0,1fr)] items-center gap-2 mb-3 last:mb-0">
+      <span className="text-sm text-noc-ink">{label}</span>
       {children}
     </label>
   );
@@ -62,28 +62,30 @@ export default function ControlPanel() {
       <div className="panel-head"><span className="panel-title">Controls</span></div>
       <div className="flex-1 overflow-y-auto">
         <Section title="Mobility">
-          <div className="grid grid-cols-2 gap-2">
+          <div className="grid grid-cols-2 gap-3">
             {MOVES.map(([link, label, agent]) => {
               const on = here === link;
               return (
                 <button key={link} onClick={() => command('MN', 'handoff', { link })}
-                  className={`h-14 min-w-0 rounded-md border text-left px-2.5 transition-colors
-                    ${on ? 'border-sky-500/70 bg-sky-500/15' : 'border-noc-edge bg-noc-raised hover:bg-[#1c2738] hover:border-[#3a475a]'}`}>
-                  <span className={`block truncate text-sm font-medium ${on ? 'text-sky-200' : 'text-noc-ink'}`}>{label}</span>
-                  <span className="block truncate font-mono text-2xs text-noc-mute">
+                  className={`h-14 min-w-0 rounded-[3px] border text-left px-3
+                    ${on ? 'border-acc bg-acc-soft' : 'border-noc-edge bg-white hover:bg-[#eef1f5]'}`}>
+                  <span className={`block truncate text-sm font-medium ${on ? 'text-acc font-semibold' : 'text-noc-ink'}`}>{label}</span>
+                  <span className="block truncate font-mono text-xs text-noc-dim">
                     {agent} {topology?.links?.[link]?.prefix || ''}
                   </span>
                 </button>
               );
             })}
           </div>
-          <button className="btn w-full mt-2" onClick={() => command('MN', 'reregister')}>Re-register now</button>
+          <button className="btn w-full mt-3" onClick={() => command('MN', 'reregister')}>Re-register now</button>
         </Section>
 
         <Section title="Protocol options">
-          {TOGGLES.map(([key, label, hint]) => (
-            <Switch key={key} checked={!!f[key]} onChange={(v) => setFeature({ [key]: v })} label={label} hint={hint} />
-          ))}
+          <div className="grid gap-3">
+            {TOGGLES.map(([key, label, hint]) => (
+              <Switch small key={key} checked={!!f[key]} onChange={(v) => setFeature({ [key]: v })} label={label} hint={hint} />
+            ))}
+          </div>
         </Section>
 
         <Section title="Tunnel and detection">
@@ -100,7 +102,7 @@ export default function ControlPanel() {
               <option value="lifetime">Advertisement lifetime</option>
             </select>
           </Field>
-          <div className="mt-3">
+          <div className="mt-4">
             <Slider label="Advertisement interval" value={f.adv_interval_ms || 1000} min={250} max={5000} step={250} unit=" ms"
               onCommit={(v) => setFeature({ adv_interval_ms: v })} />
           </div>
@@ -120,8 +122,8 @@ export default function ControlPanel() {
           )}
         </Section>
 
-        <Section title="Traffic" right={cn?.streaming ? <span className="text-sky-300">streaming</span> : null}>
-          <div className="grid grid-cols-3 gap-2 mb-3">
+        <Section title="Traffic" right={cn?.streaming ? <span className="text-acc">streaming</span> : null}>
+          <div className="grid grid-cols-3 gap-2 mb-4">
             <button className={`btn ${cn?.streaming ? 'btn-active' : ''}`} onClick={() => command('CN', 'stream_start')}>Start</button>
             <button className="btn" onClick={() => command('CN', 'stream_stop')}>Stop</button>
             <button className="btn" onClick={() => command('MN', 'ping', { count: 4 })} title="MN pings the CN 4 times">Ping CN</button>
@@ -137,16 +139,16 @@ export default function ControlPanel() {
               <option value="nonce">Nonce</option>
             </select>
           </Field>
-          <div className="grid gap-2 mt-3">
-            <button className="btn btn-warn justify-between" onClick={() => command('MN', 'demo_wrong_key')}
+          <div className="grid gap-2 mt-4">
+            <button className="btn justify-between" onClick={() => command('MN', 'demo_wrong_key')}
               title="MN signs one Registration Request with a wrong MN-HA key. Needs the MN on a foreign network.">
-              Wrong shared key<span className="font-mono text-2xs opacity-80">HA 131</span></button>
-            <button className="btn btn-warn justify-between" onClick={() => command('MN', 'demo_replay')}
+              Wrong shared key<span className="font-mono text-xs text-noc-dim">HA 131</span></button>
+            <button className="btn justify-between" onClick={() => command('MN', 'demo_replay')}
               title="MN re-sends its previous Registration Request unchanged. Needs the MN on a foreign network.">
-              Re-send old request<span className="font-mono text-2xs opacity-80">HA 133</span></button>
+              Re-send old request<span className="font-mono text-xs text-noc-dim">HA 133</span></button>
           </div>
-          <div className="flex items-center gap-2 mt-3">
-            <span className="text-xs text-noc-dim w-[96px]">Force lifetime</span>
+          <div className="flex items-center gap-2 mt-4">
+            <span className="text-sm text-noc-ink w-[104px] shrink-0">Force lifetime</span>
             <input className="field w-16 font-mono" type="number" min="0" placeholder="auto" value={life} onChange={(e) => setLife(e.target.value)} />
             <button className="btn" onClick={() => setFeature({ request_lifetime: Number(life) || 0 })}
               title="A value above the FA maximum makes the FA deny with code 69">Apply</button>

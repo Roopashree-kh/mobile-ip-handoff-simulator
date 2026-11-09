@@ -9,9 +9,9 @@ import { setState, useStore } from '../lib/store.js';
 import { SERIES, downloadCsv, linkLabel } from '../lib/util.js';
 import { Icon } from './ui.jsx';
 
-const AXIS = { stroke: '#2b3646', tick: { fill: '#9ca3af', fontSize: 11 }, tickLine: false };
-const GRID = <CartesianGrid stroke="#1f2937" vertical={false} />;
-const TIP = { contentStyle: { background: '#0b1018', border: '1px solid #2b3646', borderRadius: 6, fontSize: 12 }, labelStyle: { color: '#e5e7eb' }, itemStyle: { color: '#e5e7eb' } };
+const AXIS = { stroke: '#b8bfc8', tick: { fill: '#5f6b7a', fontSize: 11 }, tickLine: false };
+const GRID = <CartesianGrid stroke="#e6e9ed" vertical={false} />;
+const TIP = { contentStyle: { background: '#ffffff', border: '1px solid #b8bfc8', borderRadius: 3, fontSize: 12 }, labelStyle: { color: '#111111' }, itemStyle: { color: '#1f2933' } };
 const ROUTES = [['triangle', 'Triangle (via HA)', SERIES.s1], ['optimized', 'Route optimized', SERIES.s2],
   ['home', 'At home', SERIES.s3], ['rescued', 'Rescued by smooth handoff', SERIES.s4]];
 const THEORY = { ipip: 20, minimal: 12, gre: 24 };
@@ -20,7 +20,7 @@ const INNER = 148; // stream datagram: 20 IPv4 + 8 UDP + 120 payload
 function Box({ title, children, note }) {
   return (
     <section className="panel p-4">
-      <h3 className="text-sm font-semibold text-noc-ink">{title}</h3>
+      <h3 className="text-sm font-semibold text-noc-head1">{title}</h3>
       {note ? <p className="text-2xs text-noc-mute mt-0.5 mb-3">{note}</p> : <div className="mb-3" />}
       {children}
     </section>
@@ -57,10 +57,10 @@ export default function AnalyticsDrawer() {
   if (!open) return null;
   return (
     <div className="fixed inset-0 z-40 flex" onClick={() => setState({ analyticsOpen: false })}>
-      <div className="flex-1 bg-black/50" />
-      <aside className="w-[min(1100px,72vw)] h-full bg-noc-bg border-l border-noc-line overflow-y-auto shadow-2xl shadow-black/60" onClick={(e) => e.stopPropagation()}>
-        <div className="sticky top-0 z-10 flex items-center gap-3 h-14 px-5 border-b border-noc-line bg-noc-bg/95 backdrop-blur">
-          <h2 className="text-lg font-semibold">Analytics</h2>
+      <div className="flex-1 bg-black/20" />
+      <aside className="w-[min(1100px,72vw)] h-full bg-noc-bg border-l border-noc-line overflow-y-auto shadow-[-4px_0_12px_rgba(0,0,0,0.12)]" onClick={(e) => e.stopPropagation()}>
+        <div className="sticky top-0 z-10 flex items-center gap-3 h-14 px-5 border-b border-noc-line bg-white">
+          <h2 className="text-lg font-semibold text-noc-head1">Analytics</h2>
           <span className="text-xs text-noc-mute font-mono">{latency.length} samples, {handoffs.length} handoffs</span>
           <button className="btn ml-auto" onClick={() => downloadCsv('latency.csv', latency)}><Icon name="download" size={14} />Latency CSV</button>
           <button className="btn" onClick={() => downloadCsv('handoffs.csv', handoffs)}><Icon name="download" size={14} />Handoffs CSV</button>
@@ -87,7 +87,7 @@ export default function AnalyticsDrawer() {
               <XAxis dataKey="seq" type="number" domain={['dataMin', 'dataMax']} allowDecimals={false} {...AXIS} />
               <YAxis {...AXIS} unit=" ms" width={60} />
               <Tooltip {...TIP} />
-              <Legend wrapperStyle={{ fontSize: 12, color: '#9ca3af' }} iconType="circle" iconSize={8} />
+              <Legend wrapperStyle={{ fontSize: 12, color: '#5f6b7a' }} iconType="circle" iconSize={8} />
               {ROUTES.filter(([k]) => present.has(k)).map(([k, label, c]) => (
                 <Line key={k} dataKey={k} name={label} stroke={c} strokeWidth={2} dot={false} connectNulls={false} isAnimationActive={false} />
               ))}
@@ -109,23 +109,29 @@ export default function AnalyticsDrawer() {
                 {GRID}
                 <XAxis dataKey="name" {...AXIS} />
                 <YAxis {...AXIS} unit=" ms" width={64} />
-                <Tooltip {...TIP} cursor={{ fill: '#1a2332' }} />
-                <Legend wrapperStyle={{ fontSize: 12, color: '#9ca3af' }} iconType="circle" iconSize={8} />
-                <Bar dataKey="detection" name="Detection" stackId="h" fill={SERIES.s1} stroke="#111827" strokeWidth={2} isAnimationActive={false} />
-                <Bar dataKey="registration" name="Registration" stackId="h" fill={SERIES.s2} stroke="#111827" strokeWidth={2} radius={[4, 4, 0, 0]} isAnimationActive={false} />
+                <Tooltip {...TIP} cursor={{ fill: '#eef1f5' }} />
+                <Legend wrapperStyle={{ fontSize: 12, color: '#5f6b7a' }} iconType="circle" iconSize={8} />
+                <Bar dataKey="detection" name="Detection" stackId="h" fill={SERIES.s1} stroke="#ffffff" strokeWidth={2} isAnimationActive={false} />
+                <Bar dataKey="registration" name="Registration" stackId="h" fill={SERIES.s2} stroke="#ffffff" strokeWidth={2} radius={[4, 4, 0, 0]} isAnimationActive={false} />
               </BarChart>
             </ResponsiveContainer>
           </Box>
           <Box title="Packets lost per handoff" note="Smooth handoff state is shown per handoff. Rescued = forwarded by the previous FA.">
             <ResponsiveContainer width="100%" height={220}>
-              <BarChart data={hoData.map((h) => ({ ...h, name: `${h.name} (smooth ${h.smooth})` }))} margin={{ top: 6, right: 8, bottom: 0, left: 0 }}>
+              <BarChart data={hoData} margin={{ top: 6, right: 8, bottom: 0, left: 0 }}>
                 {GRID}
-                <XAxis dataKey="name" {...AXIS} interval={0} tick={{ fill: '#9ca3af', fontSize: 11 }} />
+                {/* two-line tick: handoff name, then its smooth handoff state, so labels never run together */}
+                <XAxis dataKey="name" {...AXIS} interval={0} height={36} tick={({ x, y, payload, index }) => (
+                  <g transform={`translate(${x},${y})`}>
+                    <text dy={12} textAnchor="middle" fill="#5f6b7a" fontSize={11}>{payload.value}</text>
+                    <text dy={26} textAnchor="middle" fill="#7b8794" fontSize={11}>smooth {hoData[index]?.smooth}</text>
+                  </g>
+                )} />
                 <YAxis {...AXIS} allowDecimals={false} width={40} />
-                <Tooltip {...TIP} cursor={{ fill: '#1a2332' }} />
-                <Legend wrapperStyle={{ fontSize: 12, color: '#9ca3af' }} iconType="circle" iconSize={8} />
-                <Bar dataKey="lost" name="Lost" fill={SERIES.s2} stroke="#111827" strokeWidth={2} radius={[4, 4, 0, 0]} isAnimationActive={false} />
-                <Bar dataKey="rescued" name="Rescued" fill={SERIES.s3} stroke="#111827" strokeWidth={2} radius={[4, 4, 0, 0]} isAnimationActive={false} />
+                <Tooltip {...TIP} cursor={{ fill: '#eef1f5' }} />
+                <Legend wrapperStyle={{ fontSize: 12, color: '#5f6b7a' }} iconType="circle" iconSize={8} />
+                <Bar dataKey="lost" name="Lost" fill={SERIES.s2} stroke="#ffffff" strokeWidth={2} radius={[4, 4, 0, 0]} isAnimationActive={false} />
+                <Bar dataKey="rescued" name="Rescued" fill={SERIES.s3} stroke="#ffffff" strokeWidth={2} radius={[4, 4, 0, 0]} isAnimationActive={false} />
               </BarChart>
             </ResponsiveContainer>
           </Box>
@@ -138,7 +144,7 @@ export default function AnalyticsDrawer() {
                 {GRID}
                 <XAxis dataKey="mode" {...AXIS} />
                 <YAxis {...AXIS} unit=" B" width={50} />
-                <Tooltip {...TIP} cursor={{ fill: '#1a2332' }} />
+                <Tooltip {...TIP} cursor={{ fill: '#eef1f5' }} />
                 <Bar dataKey="bytes" name="Overhead" fill={SERIES.s1} radius={[4, 4, 0, 0]} isAnimationActive={false} />
               </BarChart>
             </ResponsiveContainer>

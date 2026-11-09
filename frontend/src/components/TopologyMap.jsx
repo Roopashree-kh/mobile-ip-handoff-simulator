@@ -1,9 +1,14 @@
-// Interactive topology map, hand-built SVG.
-//  * the layout is computed from the panel's aspect ratio, so the diagram always fills it
-//  * text is counter-scaled so labels render at true 11 / 13 / 15 px whatever the zoom
-//  * every frame the router mirrors becomes a dot travelling along the drawn links
-//    (node -> its subnet edge -> Internet -> far subnet edge -> node); drops end in a red X
-//  * tunnels are smooth curved pipes derived from the HA binding table and the CN cache
+// Interactive topology map, hand-built SVG, laid out in screen pixels.
+//  * five subnet regions around the Internet cloud. Each region keeps its title in the
+//    top-left corner and nothing else is placed there
+//  * every device is a glyph with its name and address stacked underneath. In a foreign
+//    subnet the FA sits in the left half and the mobile node has a reserved slot in the right
+//  * links leave a region straight out of the agent (up for the bottom row, sideways for the
+//    top row) and run to the cloud. Delay badges sit beside the midpoint of that run
+//  * a placement pass measures every label with the real font and drops any badge that
+//    would touch another label, glyph or badge
+//  * each frame the router mirrors becomes a dot travelling along the drawn links
+//  * tunnels are curves through the cloud, derived from the HA binding table and CN cache
 //  * the mobile node can be dragged onto another network to trigger a real handoff
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { onPacket, useStore } from '../lib/store.js';
@@ -12,52 +17,107 @@ import { PTYPE_COLOR } from '../lib/util.js';
 import { Icon } from './ui.jsx';
 
 const MAX_DOTS = 180;
+const MINW = 900;
+const MINH = 620;
+const RH = 220; // minimum region height
+const M = 12;
+const GAP = 16;
+const G = 22; // half size of a device glyph
 const NODE_LINK = { HA: 'home', CN: 'cnnet', 'FA-1': 'fa1', 'FA-2': 'fa2', 'FA-3': 'fa3' };
 const ENCAP = { ipip: 'IP-in-IP', minimal: 'Minimal', gre: 'GRE' };
-const PIPE = { ha: '#a855f7', cn: '#06b6d4', rev: '#fb923c', smooth: '#facc15' };
+const PIPE = { ha: '#7b3fbf', cn: '#0f8798', rev: '#c45f12', smooth: '#9a7b00' };
 const LEGEND_DOTS = [['adv', 'Advertisement'], ['reg', 'Registration'], ['tunnel', 'Tunneled'], ['data', 'Plain data'], ['bu', 'Binding update'], ['drop', 'Dropped']];
-const LEGEND_PIPES = [['ha', 'HA tunnel'], ['cn', 'CN tunnel'], ['rev', 'Reverse']];
+const LEGEND_PIPES = [['ha', 'HA tunnel'], ['cn', 'CN tunnel'], ['rev', 'Reverse tunnel']];
+const SANS = 'Inter, "Segoe UI", system-ui, sans-serif';
+const MONO = 'Consolas, "Cascadia Mono", monospace';
+const INK = '#111111';
+const DIM = '#5f6b7a';
 
-/**
- * Region and node positions for a canvas W x H in (roughly) screen pixels. fs converts a
- * pixel size to canvas units, so label offsets keep clear of glyphs at any zoom.
- */
-function layout(W, H, fs) {
-  const T = (px) => px * fs;
-  const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
-  const m = 14;
-  const g = 22;
-  const topW = Math.min(420, W * 0.34);
-  const topH = clamp(H * 0.31, 150, 230);
-  const bw = (W - 2 * m - 2 * g) / 3;
-  const bh = clamp(H * 0.35, 176, 250);
-  const by = H - m - bh;
-  const gap = by - (m + topH);
-  const C = [W / 2, m + topH + gap / 2];
-  const topAgentY = m + topH - 26 - T(50);
-  const mnY = (y, h) => y + h - 30 - T(44);
-  const R = {
-    home: { x: m, y: m, w: topW, h: topH, agent: 'HA', a: [m + topW - 84, topAgentY], mn: [m + 96, mnY(m, topH)], lab: 'tl' },
-    cnnet: { x: W - m - topW, y: m, w: topW, h: topH, agent: 'CN', a: [W - m - topW + 84, topAgentY], mn: null, lab: 'tr' },
-    fa1: { x: m, y: by, w: bw, h: bh, agent: 'FA-1', a: [m + bw * 0.7, by + 36], mn: [m + bw * 0.42, mnY(by, bh)], lab: 'bl' },
-    fa2: { x: m + bw + g, y: by, w: bw, h: bh, agent: 'FA-2', a: [m + bw + g + bw * 0.5, by + 36], mn: [m + bw + g + bw * 0.76, mnY(by, bh)], lab: 'bl' },
-    fa3: { x: m + 2 * (bw + g), y: by, w: bw, h: bh, agent: 'FA-3', a: [m + 2 * (bw + g) + bw * 0.3, by + 36], mn: [m + 2 * (bw + g) + bw * 0.64, mnY(by, bh)], lab: 'br' },
-  };
-  const rx = Math.min(200, W * 0.15);
-  const ry = Math.max(40, Math.min(66, gap * 0.4));
-  for (const r of Object.values(R)) r.gw = exitPoint(r, r.a, C);
-  return { W, H, C, rx, ry, R };
+// ---- text measurement and rectangles ----
+
+let measureCtx = null;
+function tw(text, px, mono = false, weight = 400) {
+  if (!measureCtx) measureCtx = document.createElement('canvas').getContext('2d');
+  measureCtx.font = `${weight} ${px}px ${mono ? MONO : SANS}`;
+  return measureCtx.measureText(String(text ?? '')).width;
+}
+const rect = (x, y, w, h) => ({ x, y, w, h });
+const hits = (a, b, pad = 3) => a.x < b.x + b.w + pad && b.x < a.x + a.w + pad && a.y < b.y + b.h + pad && b.y < a.y + a.h + pad;
+const free = (r, used) => used.every((u) => !hits(r, u));
+
+/** A text line centred on x with its baseline at y, plus the box it occupies. */
+function line(text, x, y, px, opts = {}) {
+  const w = tw(text, px, opts.mono, opts.weight || 400);
+  return { text, x, y, px, ...opts, box: rect(x - w / 2 - 1, y - px * 0.8, w + 2, px * 1.05) };
 }
 
-function exitPoint(r, a, c) {
-  const dx = c[0] - a[0];
-  const dy = c[1] - a[1];
-  let t = 1;
-  if (dx > 0) t = Math.min(t, (r.x + r.w - a[0]) / dx);
-  if (dx < 0) t = Math.min(t, (r.x - a[0]) / dx);
-  if (dy > 0) t = Math.min(t, (r.y + r.h - a[1]) / dy);
-  if (dy < 0) t = Math.min(t, (r.y - a[1]) / dy);
-  return [a[0] + dx * t, a[1] + dy * t];
+/**
+ * Glyph plus its label stack. Spacing is fixed: name 16 px under the glyph, then 15 px
+ * per line. An optional pill (visitor or binding count) closes the stack.
+ */
+function stack(cx, cy, lines, pill) {
+  const out = { glyph: rect(cx - G, cy - G, 2 * G, 2 * G), lines: [], pill: null };
+  let y = cy + G + 16;
+  lines.forEach(([text, px, opts], i) => {
+    if (!text) return;
+    if (i) y += 15;
+    out.lines.push(line(text, cx, y, px, opts));
+  });
+  if (pill) {
+    const w = tw(pill, 11, false, 500) + 14;
+    out.pill = { text: pill, x: cx, y: y + 15, w, box: rect(cx - w / 2, y + 6, w, 18) };
+  }
+  out.boxes = [out.glyph, ...out.lines.map((l) => l.box), ...(out.pill ? [out.pill.box] : [])];
+  return out;
+}
+
+// ---- geometry ----
+
+/** Region frames, device slots and link exit points for a W x H canvas. */
+function layout(W, H, titles) {
+  const rh = Math.max(RH, Math.min(280, (H - 2 * M - 150) / 2));
+  const band = H - 2 * M - 2 * rh;
+  const topW = Math.min(480, W * 0.36);
+  const bw = (W - 2 * M - 2 * GAP) / 3;
+  const C = [W / 2, M + rh + band / 2];
+  const rx = Math.min(180, W * 0.15);
+  const ry = Math.max(34, Math.min(58, band * 0.36));
+  const frame = (k, x, y, w) => {
+    const t = titles[k] || {};
+    const lw = Math.max(tw(t.label, 13, false, 600), tw(t.prefix, 11, true));
+    const r = { k, x, y, w, h: rh, label: t.label, prefix: t.prefix };
+    r.title = rect(x + 10, y + 10, lw + 6, 38);
+    r.cy = y + 52 + (rh - 52 - 10 - 98) / 2 + G;
+    return r;
+  };
+  const R = {
+    home: frame('home', M, M, topW),
+    cnnet: frame('cnnet', W - M - topW, M, topW),
+    fa1: frame('fa1', M, H - M - rh, bw),
+    fa2: frame('fa2', M + bw + GAP, H - M - rh, bw),
+    fa3: frame('fa3', M + 2 * (bw + GAP), H - M - rh, bw),
+  };
+  const h = R.home;
+  h.agent = 'HA';
+  h.mn = [h.x + h.w * 0.28, h.cy];
+  h.a = [h.x + h.w * 0.7, h.cy];
+  h.gw = [h.x + h.w, h.cy];
+  const c = R.cnnet;
+  c.agent = 'CN';
+  c.mn = null;
+  c.a = [c.x + c.w * 0.55, c.cy];
+  c.gw = [c.x, c.cy];
+  ['fa1', 'fa2', 'fa3'].forEach((k, i) => {
+    const r = R[k];
+    r.agent = `FA-${i + 1}`;
+    // the uplink rises straight from the FA, so the FA must sit clear of the title
+    const ax = Math.max(r.x + r.w * 0.28, r.title.x + r.title.w + 18);
+    r.a = [ax, r.cy];
+    r.gw = [ax, r.y];
+    r.mn = [r.x + r.w * 0.72, r.cy];
+    r.mnGw = [r.mn[0], r.y];
+  });
+  return { W, H, C, rx, ry, R };
 }
 
 function ellipseEdge(C, rx, ry, p) {
@@ -66,6 +126,7 @@ function ellipseEdge(C, rx, ry, p) {
   const t = 1 / Math.sqrt((dx / rx) ** 2 + (dy / ry) ** 2);
   return [C[0] + dx * t, C[1] + dy * t];
 }
+const inEllipse = (C, rx, ry, p) => ((p[0] - C[0]) / rx) ** 2 + ((p[1] - C[1]) / ry) ** 2 < 1;
 
 function cloudPath(C, rx, ry) {
   const angles = [0, 32, 66, 98, 128, 160, 196, 230, 262, 292, 326];
@@ -102,25 +163,39 @@ function lerp(pts, t) {
   return pts[pts.length - 1];
 }
 
-/** Cubic curve from a to b that bows through the cloud, shifted sideways by off units. */
-function curve(a, b, C, off = 0) {
-  const len = Math.hypot(b[0] - a[0], b[1] - a[1]) || 1;
-  const nx = -(b[1] - a[1]) / len;
-  const ny = (b[0] - a[0]) / len;
-  const p1 = [a[0] + (C[0] - a[0]) * 0.7 + nx * off, a[1] + (C[1] - a[1]) * 0.7 + ny * off];
-  const p2 = [b[0] + (C[0] - b[0]) * 0.7 + nx * off, b[1] + (C[1] - b[1]) * 0.7 + ny * off];
+const normal = (a, b) => {
+  const l = Math.hypot(b[0] - a[0], b[1] - a[1]) || 1;
+  return [-(b[1] - a[1]) / l, (b[0] - a[0]) / l];
+};
+const shift = (p, n, s) => [p[0] + n[0] * s, p[1] + n[1] * s];
+
+/**
+ * Tunnel route: straight along the source's uplink, a curve through the cloud, straight
+ * down the destination's uplink. side moves the rails off the link line, bow moves the
+ * curve sideways so parallel tunnels stay apart.
+ */
+function tunnel(A, B, C, side, bow) {
+  const nA = normal(A.p, A.g);
+  const nB = normal(B.g, B.p);
+  const a0 = shift(A.p, nA, side);
+  const a1 = shift(A.g, nA, side);
+  const b1 = shift(B.g, nB, side);
+  const b0 = shift(B.p, nB, side);
+  const n = normal(a1, b1);
+  const p1 = [a1[0] + (C[0] - a1[0]) * 0.8 + n[0] * bow, a1[1] + (C[1] - a1[1]) * 0.8 + n[1] * bow];
+  const p2 = [b1[0] + (C[0] - b1[0]) * 0.8 + n[0] * bow, b1[1] + (C[1] - b1[1]) * 0.8 + n[1] * bow];
   const at = (t) => {
     const u = 1 - t;
-    return [0, 1].map((k) => u * u * u * a[k] + 3 * u * u * t * p1[k] + 3 * u * t * t * p2[k] + t * t * t * b[k]);
+    return [0, 1].map((k) => u * u * u * a1[k] + 3 * u * u * t * p1[k] + 3 * u * t * t * p2[k] + t * t * t * b1[k]);
   };
-  return { d: `M${a[0]},${a[1]} C${p1[0]},${p1[1]} ${p2[0]},${p2[1]} ${b[0]},${b[1]}`, at };
+  return { d: `M${a0[0]},${a0[1]} L${a1[0]},${a1[1]} C${p1[0]},${p1[1]} ${p2[0]},${p2[1]} ${b1[0]},${b1[1]} L${b0[0]},${b0[1]}`, at };
 }
 
 // ---- device glyphs (drawn around 0,0) ----
 
 function RouterGlyph({ active }) {
-  const ring = active ? '#38bdf8' : '#4b5a70';
-  const arrow = active ? '#bae6fd' : '#cbd5e1';
+  const ring = active ? '#2457a6' : '#4d5b6c';
+  const arrow = active ? '#2457a6' : '#3d4a5a';
   const arr = (rot, inward) => (
     <g transform={`rotate(${rot})`}>
       <path d={inward ? 'M0,-13 L0,-5 M-3,-8 L0,-5 L3,-8' : 'M0,-5 L0,-13 M-3,-10 L0,-13 L3,-10'}
@@ -128,9 +203,8 @@ function RouterGlyph({ active }) {
     </g>
   );
   return (
-    <g>
-      {active && <circle r="27" fill="#38bdf8" opacity="0.12" />}
-      <circle r="19" fill="#1a2332" stroke={ring} strokeWidth="1.6" />
+    <g data-box="glyph">
+      <circle r="19" fill={active ? '#e6edf8' : '#eef1f5'} stroke={ring} strokeWidth="1.6" />
       {arr(45, true)}{arr(225, true)}{arr(135, false)}{arr(315, false)}
     </g>
   );
@@ -138,41 +212,50 @@ function RouterGlyph({ active }) {
 
 function ServerGlyph() {
   return (
-    <g>
-      <rect x="-15" y="-21" width="30" height="42" rx="4" fill="#1a2332" stroke="#4b5a70" strokeWidth="1.6" />
+    <g data-box="glyph">
+      <rect x="-15" y="-21" width="30" height="42" rx="3" fill="#eef1f5" stroke="#4d5b6c" strokeWidth="1.6" />
       {[-13, -2, 9].map((y) => (
         <g key={y}>
-          <rect x="-10" y={y} width="20" height="7" rx="1.5" fill="#243042" />
-          <circle cx="6" cy={y + 3.5} r="1.4" fill="#22c55e" />
-          <line x1="-7" y1={y + 3.5} x2="1" y2={y + 3.5} stroke="#64748b" strokeWidth="1.2" />
+          <rect x="-10" y={y} width="20" height="7" rx="1" fill="#d5dbe3" />
+          <circle cx="6" cy={y + 3.5} r="1.4" fill="#2f9e44" />
+          <line x1="-7" y1={y + 3.5} x2="1" y2={y + 3.5} stroke="#7b8794" strokeWidth="1.2" />
         </g>
       ))}
     </g>
   );
 }
 
-function PhoneGlyph({ dragging }) {
+function PhoneGlyph() {
   return (
-    <g>
-      <circle r="30" fill="#38bdf8" opacity={dragging ? 0.22 : 0.12} />
-      <rect x="-13" y="-21" width="26" height="42" rx="5" fill="#0c4a6e" stroke="#38bdf8" strokeWidth="1.8" />
-      <rect x="-9" y="-15" width="18" height="26" rx="1.5" fill="#0b1018" />
-      <path d="M-5,-5 a7,7 0 0 1 10,0 M-2.5,-2 a3.5,3.5 0 0 1 5,0" fill="none" stroke="#7dd3fc" strokeWidth="1.3" strokeLinecap="round" />
-      <circle cx="0" cy="2" r="1.2" fill="#e0f2fe" />
-      <rect x="-3" y="15" width="6" height="1.6" rx="0.8" fill="#7dd3fc" />
+    <g data-box="glyph">
+      <rect x="-13" y="-21" width="26" height="42" rx="4" fill="#2457a6" stroke="#1c4787" strokeWidth="1.6" />
+      <rect x="-9" y="-15" width="18" height="26" rx="1" fill="#ffffff" />
+      <path d="M-5,-5 a7,7 0 0 1 10,0 M-2.5,-2 a3.5,3.5 0 0 1 5,0" fill="none" stroke="#2457a6" strokeWidth="1.3" strokeLinecap="round" />
+      <circle cx="0" cy="2" r="1.2" fill="#2457a6" />
+      <rect x="-3" y="15" width="6" height="1.6" rx="0.8" fill="#c9d8f0" />
     </g>
   );
 }
 
-function Pill({ x, y, text, fs, color = '#9ca3af', border = '#2b3646', bg = '#0d141f', mono = true, size = 11 }) {
-  const w = (text.length * (mono ? 0.62 : 0.58) * size + 12) * fs;
-  const h = (size + 7) * fs;
+function Pill({ p, color = DIM, border = '#c3c9d1', weight = 400, mono = true }) {
   return (
-    <g transform={`translate(${x},${y})`} pointerEvents="none">
-      <rect x={-w / 2} y={-h / 2} width={w} height={h} rx={h / 2} fill={bg} stroke={border} strokeWidth={fs} />
-      <text y={size * 0.36 * fs} textAnchor="middle" fill={color} fontSize={size * fs}
-        fontFamily={mono ? 'var(--mono)' : undefined} fontWeight={mono ? 400 : 500}>{text}</text>
+    <g pointerEvents="none" data-box="pill">
+      <rect x={p.box.x} y={p.box.y} width={p.box.w} height={p.box.h} rx="3" fill="#ffffff" stroke={border} strokeWidth="1" />
+      <text x={p.x} y={p.box.y + 13} textAnchor="middle" fill={color} fontSize="11" fontWeight={weight}
+        fontFamily={mono ? MONO : undefined} stroke="none">{p.text}</text>
     </g>
+  );
+}
+
+function Stack({ s }) {
+  return (
+    <>
+      {s.lines.map((l, i) => (
+        <text key={i} x={l.x} y={l.y} textAnchor="middle" fill={l.fill || INK} fontSize={l.px}
+          fontWeight={l.weight || 400} fontFamily={l.mono ? MONO : undefined}>{l.text}</text>
+      ))}
+      {s.pill && <Pill p={s.pill} color="#2457a6" border="#9db4da" weight={500} mono={false} />}
+    </>
   );
 }
 
@@ -181,13 +264,13 @@ export default function TopologyMap() {
   const states = useStore((s) => s.states);
   const scenario = useStore((s) => s.scenario);
   const scenarios = useStore((s) => s.scenarios);
+  const features = useStore((s) => s.features);
   const wrapRef = useRef(null);
   const svgRef = useRef(null);
   const dots = useRef([]);
   const [, setTick] = useState(0);
   const [drag, setDrag] = useState(null);
   const [box, setBox] = useState({ w: 1100, h: 640 });
-  const [legend, setLegend] = useState(false);
   const [hint, setHint] = useState(() => !localStorage.getItem('mip.hint.drag'));
   useEffect(() => {
     if (!hint) return undefined;
@@ -209,12 +292,15 @@ export default function TopologyMap() {
     return () => { ro.disconnect(); window.removeEventListener('resize', measure); cancelAnimationFrame(raf); clearTimeout(late); };
   }, []);
 
-  // canvas in screen pixels, scaled down only when the panel is smaller than 760 x 440
-  const W = Math.max(760, Math.round(box.w));
-  const H = Math.max(440, Math.round(box.h));
+  // one canvas unit is one screen pixel. A panel smaller than MINW x MINH scales the whole
+  // drawing down uniformly, so the layout (and its no-overlap guarantee) never changes
+  const W = Math.max(MINW, Math.round(box.w));
+  const H = Math.max(MINH, Math.round(box.h));
   const scale = Math.min(box.w / W, box.h / H);
-  const fs = 1 / scale; // multiply a pixel size by fs to get canvas units
-  const L = useMemo(() => layout(W, H, fs), [W, H, fs]);
+  const titleKey = topology ? JSON.stringify(Object.entries(topology.links).map(([k, l]) => [k, l.label, l.prefix])) : '';
+  const L = useMemo(() => layout(W, H, topology?.links || {}),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [W, H, titleKey]);
 
   const mnLink = states.ROUTER?.attach?.MN || states.MN?.link || 'home';
   const posRef = useRef({});
@@ -265,7 +351,7 @@ export default function TopologyMap() {
         const dur = Math.min(2600, Math.max(420, 320 + (ev.delay_ms || 0) * 10));
         dots.current.push({
           pts, start: now, dur, key: ev.no,
-          color: ev.verdict === 'dropped' ? PTYPE_COLOR.drop : (PTYPE_COLOR[ev.ptype] || '#fff'),
+          color: ev.verdict === 'dropped' ? PTYPE_COLOR.drop : (PTYPE_COLOR[ev.ptype] || '#555'),
           dropped: ev.verdict === 'dropped', arp: ev.lkind === 'arp',
         });
       }
@@ -274,30 +360,124 @@ export default function TopologyMap() {
     return () => { off(); cancelAnimationFrame(raf); };
   }, []);
 
-  // Tunnel pipes from the live tables
+  const mn = states.MN;
+  const r = states.ROUTER;
+  const activeAgent = L.R[mnLink]?.agent;
+
+  // Fixed labels: region titles, device stacks, the cloud caption. These are laid out first
+  // and reserve their boxes. Badges are placed afterwards, only into free space.
+  const fixed = useMemo(() => {
+    const ip = (n) => topology?.nodes?.[n]?.ip;
+    const stacks = {};
+    for (const g of Object.values(L.R)) {
+      const st = states[g.agent];
+      const visitors = st?.visitors?.length || 0;
+      const bindings = g.agent === 'HA' ? (states.HA?.bindings?.length || 0) : 0;
+      const pill = visitors ? `${visitors} visitor${visitors > 1 ? 's' : ''}` : bindings ? `${bindings} binding${bindings > 1 ? 's' : ''}` : '';
+      stacks[g.agent] = stack(g.a[0], g.a[1], [[g.agent, 13, { weight: 600 }], [ip(g.agent), 11, { mono: true, fill: DIM }]], pill);
+    }
+    const slot = L.R[mnLink]?.mn;
+    const mnStack = slot ? stack(slot[0], slot[1], [['MN', 13, { weight: 600 }], [mn?.home, 11, { mono: true, fill: DIM }],
+      [mn?.binding?.coa ? `CoA ${mn.binding.coa}` : '', 11, { mono: true, fill: '#2457a6' }]]) : null;
+    const bb = r?.backbone?.delay_ms ?? topology?.backbone?.delay_ms ?? '-';
+    const cap = [line('Internet', L.C[0], L.C[1] - 3, 15, { weight: 600 }), line(`10.0.0.1, backbone ${bb} ms`, L.C[0], L.C[1] + 14, 11, { mono: true, fill: DIM })];
+    const plate = rect(Math.min(...cap.map((c) => c.box.x)) - 8, cap[0].box.y - 5, Math.max(...cap.map((c) => c.box.w)) + 16, cap[1].box.y + cap[1].box.h - cap[0].box.y + 10);
+    const used = [
+      ...Object.values(L.R).map((g) => g.title),
+      ...Object.values(stacks).flatMap((s) => s.boxes),
+      ...(mnStack ? mnStack.boxes : []),
+      plate,
+    ];
+    return { stacks, mnStack, cap, plate, used };
+  }, [L, states, topology, mnLink, mn, r]);
+
+  // Tunnel pipes from the live tables, then their badges near the cloud
   const pipes = useMemo(() => {
     const out = [];
     const byIp = {};
     if (topology) for (const [n, v] of Object.entries(topology.nodes)) if (v.ip) byIp[v.ip] = n;
-    const endFor = (coa, colocated) => (colocated ? L.R[mnLink]?.mn : (byIp[coa] && pos(byIp[coa])));
+    const end = (node) => {
+      if (node === 'MN') {
+        const g = L.R[mnLink];
+        return g?.mnGw ? { p: g.mn, g: g.mnGw } : null;
+      }
+      const g = L.R[NODE_LINK[node]];
+      return g ? { p: g.a, g: g.gw } : null;
+    };
+    const endFor = (coa, colocated) => end(colocated ? 'MN' : byIp[coa]);
+    const HA = end('HA');
     for (const b of states.HA?.bindings || []) {
-      const end = endFor(b.coa, b.colocated);
-      if (!end) continue;
-      out.push({ key: `ha${b.coa}`, ...curve(L.R.home.a, end, L.C, 0), color: PIPE.ha, label: ENCAP[b.encap] || b.encap, labelAt: 0.36 });
-      if (b.reverse) out.push({ key: `rev${b.coa}`, ...curve(end, L.R.home.a, L.C, 44), color: PIPE.rev, label: 'Reverse', labelAt: 0.22 });
+      const e = endFor(b.coa, b.colocated);
+      if (!e) continue;
+      out.push({ key: `ha${b.coa}`, ...tunnel(HA, e, L.C, 4, 0), color: PIPE.ha, label: ENCAP[b.encap] || b.encap, side: 'a' });
+      if (b.reverse) out.push({ key: `rev${b.coa}`, ...tunnel(e, HA, L.C, 10, 28), color: PIPE.rev, label: 'Reverse', side: 'b' });
     }
-    for (const e of states.CN?.cache || []) {
-      const end = byIp[e.coa] ? pos(byIp[e.coa]) : L.R[mnLink]?.mn;
-      if (end) out.push({ key: `cn${e.coa}`, ...curve(L.R.cnnet.a, end, L.C, 0), color: PIPE.cn, label: ENCAP[e.encap] || 'IP-in-IP', labelAt: 0.36 });
+    for (const c of states.CN?.cache || []) {
+      const e = endFor(c.coa, !byIp[c.coa]);
+      if (e) out.push({ key: `cn${c.coa}`, ...tunnel(end('CN'), e, L.C, -4, 0), color: PIPE.cn, label: ENCAP[c.encap] || 'IP-in-IP', side: 'a' });
     }
     for (const fa of ['FA-1', 'FA-2', 'FA-3']) {
       for (const f of states[fa]?.forward || []) {
-        if (byIp[f.coa]) out.push({ key: `sm${fa}`, ...curve(pos(fa), pos(byIp[f.coa]), L.C, -30), color: PIPE.smooth, label: 'Smooth forward', labelAt: 0.5 });
+        const e = end(byIp[f.coa]);
+        if (e) out.push({ key: `sm${fa}`, ...tunnel(end(fa), e, L.C, 8, -24), color: PIPE.smooth, label: 'Smooth forward', side: 'a' });
       }
     }
     return out;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [states.HA, states.CN, states['FA-1'], states['FA-2'], states['FA-3'], mnLink, topology, L]);
+
+  const badges = useMemo(() => {
+    const used = fixed.used.slice();
+    const tunnelPills = [];
+    for (const p of pipes) {
+      // candidate spots walk outwards from where the curve meets the cloud, source side first
+      const ts = [];
+      for (let i = 0; i <= 80; i += 1) ts.push(i / 80);
+      const inside = ts.filter((t) => inEllipse(L.C, L.rx * 1.05, L.ry * 1.05, p.at(t)));
+      const tIn = inside.length ? inside[0] : 0.35;
+      const tOut = inside.length ? inside[inside.length - 1] : 0.65;
+      const near = [];
+      for (let k = 1; k <= 14; k += 1) near.push(tIn - k * 0.02, tOut + k * 0.02);
+      if (p.side === 'b') near.sort((x, y) => Math.abs(x - tOut) - Math.abs(y - tOut));
+      const w = tw(p.label, 11, false, 600) + 14;
+      for (const t of near.filter((v) => v > 0.04 && v < 0.96)) {
+        const [x, y] = p.at(t);
+        const b = rect(x - w / 2, y - 9, w, 18);
+        if (free(b, used)) {
+          used.push(b);
+          tunnelPills.push({ key: p.key, color: p.color, pill: { text: p.label, x, w, box: b } });
+          break;
+        }
+      }
+    }
+    // delay badges: midpoint of the visible link run, 10 px off the line, either side.
+    // They also keep off the tunnel curves so a badge never hides a pipe
+    const regionBoxes = Object.values(L.R).map((g) => rect(g.x, g.y, g.w, g.h));
+    for (const p of pipes) for (let i = 0; i <= 48; i += 1) { const [x, y] = p.at(i / 48); regionBoxes.push(rect(x - 2, y - 2, 4, 4)); }
+    const delayPills = [];
+    for (const [k, g] of Object.entries(L.R)) {
+      const lc = r?.links?.[k];
+      const delay = lc?.delay_ms ?? topology?.links?.[k]?.delay_ms;
+      if (delay === undefined) continue;
+      const loss = lc?.loss_pct || 0;
+      const text = `${delay} ms${loss ? `, ${loss}% loss` : ''}`;
+      const e = ellipseEdge(L.C, L.rx, L.ry, g.gw);
+      const mid = [(g.gw[0] + e[0]) / 2, (g.gw[1] + e[1]) / 2];
+      const n = normal(g.gw, e);
+      const w = tw(text, 11, true) + 14;
+      const reach = 10 + Math.abs(n[0]) * (w / 2) + Math.abs(n[1]) * 9;
+      for (const s of [1, -1]) {
+        const c = shift(mid, n, s * reach);
+        const b = rect(c[0] - w / 2, c[1] - 9, w, 18);
+        if (free(b, used) && free(b, regionBoxes)) {
+          used.push(b);
+          delayPills.push({ key: k, loss, pill: { text, x: c[0], w, box: b } });
+          break;
+        }
+      }
+    }
+    return { tunnelPills, delayPills };
+  }, [fixed, pipes, L, r, topology]);
 
   // Dragging the mobile node
   const toSvg = (e) => {
@@ -307,7 +487,7 @@ export default function TopologyMap() {
     const p = pt.matrixTransform(svgRef.current.getScreenCTM().inverse());
     return [p.x, p.y];
   };
-  const regionAt = ([x, y]) => Object.entries(L.R).find(([, r]) => r.mn && x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h)?.[0];
+  const regionAt = ([x, y]) => Object.entries(L.R).find(([, g]) => g.mn && x >= g.x && x <= g.x + g.w && y >= g.y && y <= g.y + g.h)?.[0];
   const onDown = (e) => { e.currentTarget.setPointerCapture(e.pointerId); setDrag(toSvg(e)); };
   const onMove = (e) => { if (drag) setDrag(toSvg(e)); };
   const onUp = (e) => {
@@ -321,175 +501,100 @@ export default function TopologyMap() {
     }
   };
 
-  const mn = states.MN;
-  const mnPos = drag || L.R[mnLink]?.mn || L.C;
+  const slot = L.R[mnLink]?.mn || L.C;
+  const mnPos = drag || slot;
   const hover = drag ? regionAt(drag) : null;
   const now = performance.now();
-  const r = states.ROUTER;
-  const activeAgent = L.R[mnLink]?.agent;
-  const T = (px) => px * fs;
   const scTitle = scenario ? (scenarios.find((s) => s.id === scenario.id)?.title || scenario.id) : null;
+  const dx = mnPos[0] - slot[0];
+  const dy = mnPos[1] - slot[1];
 
   return (
     <div className="panel h-full flex flex-col overflow-hidden">
       <div className="panel-head">
         <span className="panel-title">Topology</span>
-        {r?.ingress_filtering && <span className="badge border-amber-500/40 bg-amber-500/10 text-amber-300">Ingress filter on</span>}
-        {box.w < 1060 ? (
-          <div className="ml-auto relative">
-            <button className="btn h-6 px-2 text-2xs" onClick={() => setLegend(!legend)} aria-expanded={legend}>
-              <span className="flex -space-x-0.5">{['adv', 'reg', 'tunnel', 'data'].map((k) => <span key={k} className="w-2 h-2 rounded-full ring-1 ring-noc-panel" style={{ background: PTYPE_COLOR[k] }} />)}</span>
-              Legend
-            </button>
-            {legend && (
-              <div className="absolute right-0 top-8 z-30 w-48 p-3 rounded-lg border border-noc-edge bg-noc-raised shadow-xl shadow-black/50 grid gap-1.5 text-2xs text-noc-dim fade-in">
-                {LEGEND_DOTS.map(([k, label]) => (
-                  <span key={k} className="flex items-center gap-2"><span className="w-2 h-2 rounded-full" style={{ background: PTYPE_COLOR[k] }} />{label}</span>
-                ))}
-                <span className="h-px bg-noc-line my-0.5" />
-                {LEGEND_PIPES.map(([k, label]) => (
-                  <span key={k} className="flex items-center gap-2"><span className="w-4 h-[3px] rounded-full" style={{ background: PIPE[k] }} />{label}</span>
-                ))}
-              </div>
-            )}
-          </div>
-        ) : (
-        <div className="ml-auto flex items-center gap-3 text-2xs text-noc-dim overflow-hidden whitespace-nowrap">
-          {LEGEND_DOTS.map(([k, label]) => (
-            <span key={k} className="flex items-center gap-1.5">
-              <span className="w-2 h-2 rounded-full" style={{ background: PTYPE_COLOR[k], boxShadow: `0 0 6px ${PTYPE_COLOR[k]}` }} />{label}
-            </span>
-          ))}
-          <span className="w-px h-4 bg-noc-line" />
-          {LEGEND_PIPES.map(([k, label]) => (
-            <span key={k} className="flex items-center gap-1.5">
-              <span className="w-4 h-[3px] rounded-full" style={{ background: PIPE[k] }} />{label}
-            </span>
-          ))}
-        </div>
+        {features.ingress_filtering && <span className="badge border-warn-line bg-warn-soft text-warn">Ingress filter on</span>}
+        {scenario && (
+          <span className="flex items-center gap-2 min-w-0 ml-2 text-sm">
+            <span className="font-semibold text-acc whitespace-nowrap">{scTitle}</span>
+            {scenario.total ? <span className="font-mono text-xs text-noc-dim whitespace-nowrap">step {scenario.step || 0}/{scenario.total}</span> : null}
+            <span className="text-noc-dim truncate">{scenario.note}</span>
+          </span>
+        )}
+        {hint && !scenario && (
+          <span className="ml-auto flex items-center gap-1.5 h-7 pl-2 pr-1 rounded-[3px] border border-acc-line bg-acc-soft text-xs text-noc-ink whitespace-nowrap fade-in">
+            <Icon name="info" size={14} className="text-acc" />
+            Drag the MN onto another network to hand off
+            <button className="icon-btn btn-ghost w-6 h-6" aria-label="Dismiss hint"
+              onClick={() => { localStorage.setItem('mip.hint.drag', '1'); setHint(false); }}><Icon name="close" size={12} /></button>
+          </span>
         )}
       </div>
 
-      <div ref={wrapRef} className="relative flex-1 min-h-0">
+      <div ref={wrapRef} className="relative flex-1 min-h-0 bg-white">
         <svg ref={svgRef} viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="xMidYMid meet"
-          className="topo absolute inset-0 w-full h-full select-none" style={{ '--mono': '"Cascadia Mono", Consolas, monospace' }}>
-          <defs>
-            <filter id="soft-glow" x="-30%" y="-30%" width="160%" height="160%"><feGaussianBlur stdDeviation="9" /></filter>
-            <filter id="dot-glow" x="-100%" y="-100%" width="300%" height="300%"><feGaussianBlur stdDeviation="2.5" /></filter>
-            <radialGradient id="cloud-fill" cx="50%" cy="40%" r="70%">
-              <stop offset="0%" stopColor="#1a2536" /><stop offset="100%" stopColor="#121b29" />
-            </radialGradient>
-          </defs>
+          className="topo absolute inset-0 w-full h-full select-none" style={{ fontFamily: SANS }} data-scale={scale.toFixed(3)}>
 
-          {/* subnet regions */}
+          {/* subnet regions, title in the top-left corner */}
           {Object.entries(L.R).map(([k, g]) => {
-            const l = topology?.links?.[k];
             const isHover = hover === k && k !== mnLink;
             const here = mnLink === k;
-            const tx = g.lab.endsWith('r') ? g.x + g.w - 16 : g.x + 16;
-            const anchor = g.lab.endsWith('r') ? 'end' : 'start';
-            const ty = g.lab.startsWith('t') ? g.y + 16 + T(15) : g.y + g.h - 16 - T(16);
             return (
               <g key={k}>
-                {isHover && <rect x={g.x} y={g.y} width={g.w} height={g.h} rx="14" fill="none" stroke="#38bdf8" strokeWidth="10" opacity="0.55" filter="url(#soft-glow)" />}
-                <rect x={g.x} y={g.y} width={g.w} height={g.h} rx="14"
-                  fill={isHover ? '#0f2233' : '#0d141f'} stroke={here ? '#38bdf8' : '#1f2937'} strokeOpacity={here ? 0.35 : 1} strokeWidth="1.2" />
-                <text x={tx} y={ty} textAnchor={anchor} fill="#e5e7eb" fontSize={T(13)} fontWeight="600">{l?.label}</text>
-                <text x={tx} y={ty + T(16)} textAnchor={anchor} fill="#6b7280" fontSize={T(11)} fontFamily="var(--mono)">{l?.prefix}</text>
+                <rect x={g.x} y={g.y} width={g.w} height={g.h} rx="4"
+                  fill={isHover ? '#e6edf8' : '#fafbfc'} stroke={isHover || here ? '#2457a6' : '#c3c9d1'}
+                  strokeWidth={isHover || here ? 1.5 : 1} strokeDasharray={isHover ? '6 4' : undefined} />
+                <text x={g.title.x + 2} y={g.y + 26} fill={INK} fontSize="13" fontWeight="600">{g.label}</text>
+                <text x={g.title.x + 2} y={g.y + 43} fill={DIM} fontSize="11" fontFamily={MONO}>{g.prefix}</text>
               </g>
             );
           })}
 
-          {/* links: agent to subnet edge to the Internet, delay label on the line */}
+          {/* links: agent, straight out of its region, then to the Internet */}
           {Object.entries(L.R).map(([k, g]) => {
             const loss = r?.links?.[k]?.loss_pct || 0;
             return (
-              <g key={`l${k}`}>
-                <line x1={g.a[0]} y1={g.a[1]} x2={L.C[0]} y2={L.C[1]} stroke={loss ? '#8a6a2a' : '#3b4757'} strokeWidth="1.5" />
-              </g>
+              <polyline key={`l${k}`} points={`${g.a[0]},${g.a[1]} ${g.gw[0]},${g.gw[1]} ${L.C[0]},${L.C[1]}`} fill="none"
+                stroke={loss ? '#c98500' : '#8d96a3'} strokeWidth="1.5" strokeDasharray={loss ? '5 3' : undefined} />
             );
           })}
 
-          {/* wireless or LAN attachment of the MN to the agent on its link */}
+          {/* attachment of the MN to the agent on its link */}
           {!drag && L.R[mnLink]?.mn && (
             <line x1={L.R[mnLink].mn[0]} y1={L.R[mnLink].mn[1]} x2={L.R[mnLink].a[0]} y2={L.R[mnLink].a[1]}
-              stroke="#38bdf8" strokeOpacity="0.5" strokeWidth="1.5" strokeDasharray="3 5" strokeLinecap="round" />
+              stroke="#2457a6" strokeOpacity="0.7" strokeWidth="1.5" strokeDasharray="3 4" strokeLinecap="round" />
           )}
 
           {/* the Internet */}
-          <g>
-            <path d={cloudPath(L.C, L.rx, L.ry)} fill="url(#cloud-fill)" stroke="#3b4757" strokeWidth="1.5" />
-          </g>
+          <path d={cloudPath(L.C, L.rx, L.ry)} fill="#eef1f5" stroke="#9aa3ae" strokeWidth="1.2" />
 
           {/* tunnels */}
           {pipes.map((p) => (
             <g key={p.key}>
-              <path d={p.d} fill="none" stroke={p.color} strokeOpacity="0.16" strokeWidth="10" strokeLinecap="round" />
-              <path d={p.d} fill="none" stroke={p.color} strokeOpacity="0.9" strokeWidth="2.2" strokeLinecap="round"><title>{p.label}</title></path>
-              <path d={p.d} fill="none" stroke="#ffffff" strokeOpacity="0.55" strokeWidth="2.2" strokeLinecap="round" strokeDasharray="0.5 14.5" className="pipe-flow" />
+              <path d={p.d} fill="none" stroke={p.color} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><title>{p.label}</title></path>
+              <path d={p.d} fill="none" stroke="#ffffff" strokeOpacity="0.85" strokeWidth="2.5" strokeLinecap="round" strokeDasharray="0.5 14.5" className="pipe-flow" />
             </g>
           ))}
 
-          {/* labels that must stay readable above the pipes: cloud text, link delays, pipe names */}
-          <g className="halo">
-            {(() => {
-              const bb = r?.backbone?.delay_ms ?? topology?.backbone?.delay_ms ?? '-';
-              const l2 = `10.0.0.1, backbone ${bb} ms`;
-              const l3 = r ? `${r.counters.forwarded} forwarded, ${r.counters.dropped} dropped` : '';
-              const w = (Math.max(l2.length, l3.length) * 6.9 + 24) * fs;
-              const h = (r ? 62 : 46) * fs;
-              return (
-                <>
-                  <rect x={L.C[0] - w / 2} y={L.C[1] - T(28)} width={w} height={h} rx={T(8)} fill="#141e2d" fillOpacity="0.94" />
-                  <text x={L.C[0]} y={L.C[1] - T(9)} textAnchor="middle" fill="#e5e7eb" fontSize={T(15)} fontWeight="600">Internet</text>
-                  <text x={L.C[0]} y={L.C[1] + T(9)} textAnchor="middle" fill="#9ca3af" fontSize={T(11)} fontFamily="var(--mono)">{l2}</text>
-                  {r && <text x={L.C[0]} y={L.C[1] + T(25)} textAnchor="middle" fill="#6b7280" fontSize={T(11)} fontFamily="var(--mono)">{l3}</text>}
-                </>
-              );
-            })()}
-          </g>
+          {/* cloud caption on a plate above the pipes */}
+          <rect x={fixed.plate.x} y={fixed.plate.y} width={fixed.plate.w} height={fixed.plate.h} rx="3" fill="#eef1f5" />
+          {fixed.cap.map((c, i) => (
+            <text key={i} x={c.x} y={c.y} textAnchor="middle" fill={c.fill || INK} fontSize={c.px} fontWeight={c.weight || 400}
+              fontFamily={c.mono ? MONO : undefined} stroke="#eef1f5">{c.text}</text>
+          ))}
 
-          {Object.entries(L.R).map(([k, g]) => {
-            const pipeLabels = pipes.map((p) => p.at(p.labelAt ?? 0.3));
-            const lc = r?.links?.[k];
-            const delay = lc?.delay_ms ?? topology?.links?.[k]?.delay_ms;
-            if (delay === undefined) return null;
-            const loss = lc?.loss_pct || 0;
-            const edge = ellipseEdge(L.C, L.rx * 0.95, L.ry * 0.95, g.a);
-            const run = Math.hypot(edge[0] - g.gw[0], edge[1] - g.gw[1]);
-            const along = (f) => [g.gw[0] + (edge[0] - g.gw[0]) * f, g.gw[1] + (edge[1] - g.gw[1]) * f];
-            const clear = (q) => pipeLabels.every(([x, y]) => Math.abs(x - q[0]) > 78 * fs || Math.abs(y - q[1]) > 22 * fs)
-              && Object.values(L.R).every((o) => Math.abs(o.a[0] - q[0]) > 70 * fs || q[1] < o.a[1] - 26 || q[1] > o.a[1] + 30 + 52 * fs);
-            let at = [0.3, 0.05, 0.6, 0.85].map(along).find(clear);
-            if (run < 70) {
-              // short hop (the subnet right under the cloud): park the label beside the line
-              const mid = [(g.a[0] + edge[0]) / 2, (g.a[1] + edge[1]) / 2];
-              at = [mid[0] - 46 * fs, mid[1]];
-            }
-            if (!at) return null; // no free spot on a cramped canvas: the delay is still under Link conditions
-            return <Pill key={`d${k}`} x={at[0]} y={at[1]} fs={fs} text={`${delay} ms${loss ? `, ${loss}% loss` : ''}`} color={loss ? '#fbbf24' : '#9ca3af'} />;
-          })}
-          {pipes.map((p) => {
-            const [x, y] = p.at(p.labelAt ?? 0.3);
-            return <Pill key={`p${p.key}`} x={x} y={y} fs={fs} text={p.label} color={p.color} border={p.color} bg="#0d141f" mono={false} />;
-          })}
+          {badges.delayPills.map((d) => <Pill key={`d${d.key}`} p={d.pill} color={d.loss ? '#8a5a00' : DIM} border={d.loss ? '#e3c27a' : '#c3c9d1'} />)}
+          {badges.tunnelPills.map((t) => <Pill key={`p${t.key}`} p={t.pill} color={t.color} border={t.color} weight={600} mono={false} />)}
 
           {/* agents and the correspondent */}
-          {Object.entries(L.R).map(([k, g]) => {
-            const st = states[g.agent];
-            const isCn = g.agent === 'CN';
-            const visitors = st?.visitors?.length || 0;
-            const bindings = g.agent === 'HA' ? (states.HA?.bindings?.length || 0) : 0;
-            const extra = visitors ? `${visitors} visitor${visitors > 1 ? 's' : ''}` : bindings ? `${bindings} binding${bindings > 1 ? 's' : ''}` : '';
-            return (
-              <g key={`a${k}`} transform={`translate(${g.a[0]},${g.a[1]})`}>
-                {isCn ? <ServerGlyph /> : <RouterGlyph active={activeAgent === g.agent} />}
-                <text y={24 + T(14)} textAnchor="middle" fill="#e5e7eb" fontSize={T(13)} fontWeight="600">{g.agent}</text>
-                <text y={24 + T(28)} textAnchor="middle" fill="#9ca3af" fontSize={T(11)} fontFamily="var(--mono)">{topology?.nodes?.[g.agent]?.ip}</text>
-                {extra && <Pill x={0} y={24 + T(44)} fs={fs} text={extra} color="#7dd3fc" border="#0c4a6e" bg="#0b1a29" mono={false} />}
+          {Object.values(L.R).map((g) => (
+            <g key={`a${g.k}`}>
+              <g transform={`translate(${g.a[0]},${g.a[1]})`}>
+                {g.agent === 'CN' ? <ServerGlyph /> : <RouterGlyph active={activeAgent === g.agent} />}
               </g>
-            );
-          })}
+              <Stack s={fixed.stacks[g.agent]} />
+            </g>
+          ))}
 
           {/* packets */}
           {dots.current.map((d) => {
@@ -500,64 +605,37 @@ export default function TopologyMap() {
               const fade = 1 - Math.min(1, (now - d.start - d.dur) / 900);
               return (
                 <g key={d.key} opacity={fade} stroke={d.color} strokeWidth="3" strokeLinecap="round">
-                  <circle cx={x} cy={y} r="11" fill={d.color} fillOpacity="0.15" stroke="none" />
                   <line x1={x - 6} y1={y - 6} x2={x + 6} y2={y + 6} /><line x1={x - 6} y1={y + 6} x2={x + 6} y2={y - 6} />
                 </g>
               );
             }
-            return (
-              <g key={d.key}>
-                <circle cx={x} cy={y} r="8" fill={d.color} opacity="0.45" filter="url(#dot-glow)" />
-                <circle cx={x} cy={y} r="5.5" fill={d.color} stroke="#0b1018" strokeWidth="1" />
-              </g>
-            );
+            return <circle key={d.key} cx={x} cy={y} r="5" fill={d.color} stroke="#ffffff" strokeWidth="1.5" />;
           })}
 
-          {/* mobile node */}
-          <g transform={`translate(${mnPos[0]},${mnPos[1]})`} style={{ cursor: drag ? 'grabbing' : 'grab' }}
-            onPointerDown={onDown} onPointerMove={onMove} onPointerUp={onUp}>
+          {/* mobile node in its reserved slot */}
+          <g style={{ cursor: drag ? 'grabbing' : 'grab' }} onPointerDown={onDown} onPointerMove={onMove} onPointerUp={onUp}>
             <title>Drag onto another network to hand off</title>
-            <PhoneGlyph dragging={!!drag} />
-            <text y={26 + T(14)} textAnchor="middle" fill="#e0f2fe" fontSize={T(13)} fontWeight="600">MN</text>
-            <text y={26 + T(28)} textAnchor="middle" fill="#9ca3af" fontSize={T(11)} fontFamily="var(--mono)">{mn?.home}</text>
-            {mn?.binding?.coa && (
-              <text y={26 + T(42)} textAnchor="middle" fill="#7dd3fc" fontSize={T(11)} fontFamily="var(--mono)">CoA {mn.binding.coa}</text>
-            )}
+            <g transform={`translate(${mnPos[0]},${mnPos[1]})`}>
+              <rect x="-26" y="-26" width="52" height="52" fill="transparent" />
+              <PhoneGlyph />
+            </g>
+            {fixed.mnStack && <g transform={`translate(${dx},${dy})`}><Stack s={fixed.mnStack} /></g>}
           </g>
         </svg>
+      </div>
 
-        {scenario && (
-          <div className="absolute top-3 left-1/2 -translate-x-1/2 max-w-[70%] fade-in">
-            <div className="flex items-center gap-2 h-8 px-3 rounded-full border border-sky-500/40 bg-[#0b1a29]/95 shadow-lg shadow-black/40">
-              <span className="w-1.5 h-1.5 rounded-full bg-sky-400 animate-pulse" />
-              <span className="text-xs font-semibold text-sky-200 whitespace-nowrap">{scTitle}</span>
-              {scenario.total ? <span className="font-mono text-2xs text-noc-mute whitespace-nowrap">{scenario.step || 0}/{scenario.total}</span> : null}
-              <span className="text-xs text-noc-dim truncate">{scenario.note}</span>
-            </div>
-          </div>
-        )}
-
-        {hint && !drag && (() => {
-          // one-time tooltip anchored above the MN glyph
-          const ox = (box.w - W * scale) / 2;
-          const oy = (box.h - H * scale) / 2;
-          const HINT_W = 330;
-          const mx = ox + mnPos[0] * scale;
-          const right = mx + 38 * scale + HINT_W < box.w || mx - 38 * scale - HINT_W < 0;
-          const x = ox + (mnPos[0] + (right ? 38 : -38)) * scale;
-          const y = oy + mnPos[1] * scale;
-          return (
-            <div className={`absolute z-20 -translate-y-1/2 flex items-center fade-in ${right ? '' : '-translate-x-full flex-row-reverse'}`} style={{ left: x, top: y }}>
-              <div className={`w-2 h-2 rotate-45 bg-[#0b1a29] border-sky-500/40 ${right ? '-mr-1 border-l border-b' : '-ml-1 border-r border-t'}`} />
-              <div className="flex items-center gap-2 h-8 pl-2.5 pr-1 rounded-md border border-sky-500/40 bg-[#0b1a29] text-xs text-sky-100 shadow-lg shadow-black/50 whitespace-nowrap">
-                <Icon name="info" size={14} className="text-sky-400" />
-                Drag the MN onto another network to hand off
-                <button className="icon-btn btn-ghost w-6 h-6" aria-label="Dismiss hint"
-                  onClick={() => { localStorage.setItem('mip.hint.drag', '1'); setHint(false); }}><Icon name="close" size={12} /></button>
-              </div>
-            </div>
-          );
-        })()}
+      <div className="h-8 shrink-0 flex items-center gap-4 px-4 border-t border-noc-line text-xs text-noc-dim overflow-hidden whitespace-nowrap">
+        {LEGEND_DOTS.map(([k, label]) => (
+          <span key={k} className="flex items-center gap-1.5">
+            <span className="w-2.5 h-2.5 rounded-full" style={{ background: PTYPE_COLOR[k] }} />{label}
+          </span>
+        ))}
+        <span className="w-px h-4 bg-noc-line" />
+        {LEGEND_PIPES.map(([k, label]) => (
+          <span key={k} className="flex items-center gap-1.5">
+            <span className="w-4 h-[3px]" style={{ background: PIPE[k] }} />{label}
+          </span>
+        ))}
       </div>
     </div>
   );
