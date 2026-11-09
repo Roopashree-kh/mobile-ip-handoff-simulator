@@ -86,6 +86,9 @@ body {
 /* the newest Protocol walkthrough entry is highlighted briefly */
 @keyframes flash { from { background: #fff1c2; } to { background: transparent; } }
 .flash { animation: flash 2.5s ease-out; }
+/* Story mode buffering spinner */
+@keyframes spin { to { transform: rotate(360deg); } }
+.spin { animation: spin 0.9s linear infinite; }
 
 ::-webkit-scrollbar { width: 12px; height: 12px; }
 ::-webkit-scrollbar-thumb { background: #c4cad2; border: 3px solid #ffffff; border-radius: 6px; }

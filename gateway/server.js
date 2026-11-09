@@ -194,7 +194,7 @@ wss.on('connection', (ws) => {
     else if (m.type === 'reset') { runner.stop('stopped by reset'); resetAll(); }
     else if (m.type === 'scenario') {
       const s = scenarios.find((x) => x.id === m.id);
-      if (s) runner.run(s).catch((e) => console.error('[gateway] scenario error', e));
+      if (s) runner.run(s, Number(m.start) || 0).catch((e) => console.error('[gateway] scenario error', e));
     } else if (m.type === 'scenario_stop') runner.stop('stopped by user');
     else if (m.type === 'clear') { ring = []; pcapRing = []; metrics.reset(); queue({ type: 'cleared' }); }
   });

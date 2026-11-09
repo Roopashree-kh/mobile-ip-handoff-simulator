@@ -1,4 +1,5 @@
-// Single-screen network operations console. Resizable panels:
+// Two screens over one store. Story mode (default) is the beginner view. Expert mode is the
+// full network operations console, with resizable panels:
 //   top bar
 //   [ controls | topology map (hero) | agent state ]
 //   [ packet inspector, collapsible to its header bar ]
@@ -11,13 +12,15 @@ import TopologyMap from './components/TopologyMap.jsx';
 import AgentPanel from './components/AgentPanel.jsx';
 import PacketInspector from './components/PacketInspector.jsx';
 import AnalyticsDrawer from './components/AnalyticsDrawer.jsx';
+import StoryMode from './components/story/StoryMode.jsx';
+import { useStore } from './lib/store.js';
 
 const BAR_PX = 42; // inspector header plus its border, the height of the collapsed bar
 // narrower screens give the side panels a larger share so their tables still fit
 const WIDE = typeof window === 'undefined' || window.innerWidth >= 1600;
 const SIZES = WIDE ? [18, 60, 22] : [20, 52, 28];
 
-export default function App() {
+function Expert() {
   const area = useRef(null);
   const inspector = useRef(null);
   const [barPct, setBarPct] = useState(5);
@@ -38,8 +41,7 @@ export default function App() {
   };
 
   return (
-    <div className="h-full flex flex-col">
-      <TopBar />
+    <>
       <div ref={area} className="flex-1 min-h-0 p-2">
         <PanelGroup direction="vertical" autoSaveId="lt-v">
           <Panel defaultSize={70} minSize={35}>
@@ -61,6 +63,16 @@ export default function App() {
         </PanelGroup>
       </div>
       <AnalyticsDrawer />
+    </>
+  );
+}
+
+export default function App() {
+  const mode = useStore((s) => s.mode);
+  return (
+    <div className="h-full flex flex-col">
+      <TopBar />
+      {mode === 'expert' ? <Expert /> : <StoryMode />}
     </div>
   );
 }

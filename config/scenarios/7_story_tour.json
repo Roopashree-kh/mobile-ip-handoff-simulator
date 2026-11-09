@@ -1,0 +1,413 @@
+{
+  "title": "Story mode tour",
+  "description": "Guided two-minute walkthrough for Story mode: discovery, registration, tunnelling, smooth handoff and the shorter path.",
+  "chapters": [
+    {
+      "note": "Meet Priya. She is at home, watching a video on her phone.",
+      "walk": "home",
+      "steps": [
+        {
+          "reset": true
+        },
+        {
+          "wait": 1500
+        },
+        {
+          "set": {
+            "smooth_handoff": false,
+            "route_optimization": false,
+            "reverse_tunneling": false,
+            "ingress_filtering": false,
+            "time_scale": 1
+          }
+        },
+        {
+          "target": "CN",
+          "cmd": "stream_start"
+        },
+        {
+          "wait": 5000
+        }
+      ]
+    },
+    {
+      "note": "Priya walks to the campus. Watch what her phone does when it lands on a new network.",
+      "walk": "fa1",
+      "setup": [
+        {
+          "set": {
+            "smooth_handoff": false,
+            "route_optimization": false,
+            "reverse_tunneling": false,
+            "ingress_filtering": false
+          }
+        },
+        {
+          "target": "MN",
+          "cmd": "handoff",
+          "args": {
+            "link": "home"
+          }
+        },
+        {
+          "target": "CN",
+          "cmd": "stream_start"
+        },
+        {
+          "wait": 3000
+        }
+      ],
+      "steps": [
+        {
+          "wait": 1700
+        },
+        {
+          "target": "MN",
+          "cmd": "handoff",
+          "args": {
+            "link": "fa1"
+          }
+        },
+        {
+          "wait": 14000
+        }
+      ]
+    },
+    {
+      "note": "The video kept playing, and her address never changed. Only the route behind it did.",
+      "setup": [
+        {
+          "set": {
+            "smooth_handoff": false,
+            "route_optimization": false,
+            "reverse_tunneling": false,
+            "ingress_filtering": false
+          }
+        },
+        {
+          "target": "MN",
+          "cmd": "handoff",
+          "args": {
+            "link": "fa1"
+          }
+        },
+        {
+          "target": "CN",
+          "cmd": "stream_start"
+        },
+        {
+          "wait": 3000
+        }
+      ],
+      "steps": [
+        {
+          "wait": 6000
+        }
+      ]
+    },
+    {
+      "note": "Next stop is the Metro, with Smooth handoff off. Keep an eye on the frames lost counter.",
+      "walk": "fa2",
+      "setup": [
+        {
+          "set": {
+            "smooth_handoff": false,
+            "route_optimization": false,
+            "reverse_tunneling": false,
+            "ingress_filtering": false
+          }
+        },
+        {
+          "target": "MN",
+          "cmd": "handoff",
+          "args": {
+            "link": "fa1"
+          }
+        },
+        {
+          "target": "CN",
+          "cmd": "stream_start"
+        },
+        {
+          "wait": 3000
+        }
+      ],
+      "steps": [
+        {
+          "set": {
+            "smooth_handoff": false
+          }
+        },
+        {
+          "wait": 1700
+        },
+        {
+          "target": "MN",
+          "cmd": "handoff",
+          "args": {
+            "link": "fa2"
+          }
+        },
+        {
+          "wait": 12000
+        }
+      ]
+    },
+    {
+      "note": "Back to the campus, so we can make the same trip again with Smooth handoff on.",
+      "walk": "fa1",
+      "setup": [
+        {
+          "set": {
+            "smooth_handoff": false,
+            "route_optimization": false,
+            "reverse_tunneling": false,
+            "ingress_filtering": false
+          }
+        },
+        {
+          "target": "MN",
+          "cmd": "handoff",
+          "args": {
+            "link": "fa2"
+          }
+        },
+        {
+          "target": "CN",
+          "cmd": "stream_start"
+        },
+        {
+          "wait": 3000
+        }
+      ],
+      "steps": [
+        {
+          "set": {
+            "smooth_handoff": true
+          }
+        },
+        {
+          "wait": 1700
+        },
+        {
+          "target": "MN",
+          "cmd": "handoff",
+          "args": {
+            "link": "fa1"
+          }
+        },
+        {
+          "wait": 9000
+        }
+      ]
+    },
+    {
+      "note": "Smooth handoff is on. The campus network now saves frames that arrive during the switch and passes them on.",
+      "walk": "fa2",
+      "setup": [
+        {
+          "set": {
+            "smooth_handoff": true,
+            "route_optimization": false,
+            "reverse_tunneling": false,
+            "ingress_filtering": false
+          }
+        },
+        {
+          "target": "MN",
+          "cmd": "handoff",
+          "args": {
+            "link": "fa1"
+          }
+        },
+        {
+          "target": "CN",
+          "cmd": "stream_start"
+        },
+        {
+          "wait": 3000
+        }
+      ],
+      "steps": [
+        {
+          "wait": 1700
+        },
+        {
+          "target": "MN",
+          "cmd": "handoff",
+          "args": {
+            "link": "fa2"
+          }
+        },
+        {
+          "wait": 12000
+        }
+      ]
+    },
+    {
+      "note": "Compare the two Metro trips in the history strip. Smooth handoff loses fewer frames.",
+      "setup": [
+        {
+          "set": {
+            "smooth_handoff": true,
+            "route_optimization": false,
+            "reverse_tunneling": false,
+            "ingress_filtering": false
+          }
+        },
+        {
+          "target": "MN",
+          "cmd": "handoff",
+          "args": {
+            "link": "fa2"
+          }
+        },
+        {
+          "target": "CN",
+          "cmd": "stream_start"
+        },
+        {
+          "wait": 3000
+        }
+      ],
+      "steps": [
+        {
+          "wait": 6000
+        }
+      ]
+    },
+    {
+      "note": "Every video packet still takes a detour through Priya's home. Look at the delay on the phone.",
+      "setup": [
+        {
+          "set": {
+            "smooth_handoff": true,
+            "route_optimization": false,
+            "reverse_tunneling": false,
+            "ingress_filtering": false
+          }
+        },
+        {
+          "target": "MN",
+          "cmd": "handoff",
+          "args": {
+            "link": "fa2"
+          }
+        },
+        {
+          "target": "CN",
+          "cmd": "stream_start"
+        },
+        {
+          "wait": 3000
+        }
+      ],
+      "steps": [
+        {
+          "wait": 6000
+        }
+      ]
+    },
+    {
+      "note": "Now we turn on Shorter path.",
+      "setup": [
+        {
+          "set": {
+            "smooth_handoff": true,
+            "route_optimization": false,
+            "reverse_tunneling": false,
+            "ingress_filtering": false
+          }
+        },
+        {
+          "target": "MN",
+          "cmd": "handoff",
+          "args": {
+            "link": "fa2"
+          }
+        },
+        {
+          "target": "CN",
+          "cmd": "stream_start"
+        },
+        {
+          "wait": 3000
+        }
+      ],
+      "steps": [
+        {
+          "set": {
+            "route_optimization": true
+          }
+        },
+        {
+          "wait": 10000
+        }
+      ]
+    },
+    {
+      "note": "The delay on the phone has dropped, because the packets no longer go through home first.",
+      "setup": [
+        {
+          "set": {
+            "smooth_handoff": true,
+            "route_optimization": true,
+            "reverse_tunneling": false,
+            "ingress_filtering": false
+          }
+        },
+        {
+          "target": "MN",
+          "cmd": "handoff",
+          "args": {
+            "link": "fa2"
+          }
+        },
+        {
+          "target": "CN",
+          "cmd": "stream_start"
+        },
+        {
+          "wait": 4000
+        }
+      ],
+      "steps": [
+        {
+          "wait": 7000
+        }
+      ]
+    },
+    {
+      "note": "Want to see the real packets? Switch to Expert mode.",
+      "setup": [
+        {
+          "set": {
+            "smooth_handoff": true,
+            "route_optimization": true,
+            "reverse_tunneling": false,
+            "ingress_filtering": false
+          }
+        },
+        {
+          "target": "MN",
+          "cmd": "handoff",
+          "args": {
+            "link": "fa2"
+          }
+        },
+        {
+          "target": "CN",
+          "cmd": "stream_start"
+        },
+        {
+          "wait": 3000
+        }
+      ],
+      "steps": [
+        {
+          "wait": 6000
+        }
+      ]
+    }
+  ]
+}

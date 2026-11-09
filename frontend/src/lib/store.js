@@ -1,12 +1,17 @@
 // Tiny external store. Components subscribe with useStore(selector) and re-render only
 // when the selected slice changes by reference, which keeps 50 ms event batches cheap.
 import { useSyncExternalStore } from 'react';
+import { captionFor, resetStoryContext, roSwitched } from './story.js';
 
 const MAX_PACKETS = 4000;
 const MAX_EVENTS = 600;
 const MAX_LATENCY = 1500;
+const MAX_CAPTIONS = 40;
 
 const initial = {
+  mode: 'story', // 'story' (beginner screen, default) or 'expert' (full console)
+  captions: [], // Story mode narrator lines, plain English
+  walkCue: null, // tour asks the Story scene to walk Priya somewhere
   connected: false,
   startedAt: Date.now(),
   resetAt: Date.now(),
@@ -36,6 +41,8 @@ const initial = {
 let state = initial;
 const subs = new Set();
 const packetListeners = new Set();
+const dataListeners = new Set();
+let captionId = 0;
 const MAX_WALK = 300;
 const recentLearn = new Map();
 let walkId = 0;
@@ -54,6 +61,12 @@ function subscribe(f) {
 
 export function useStore(selector) {
   return useSyncExternalStore(subscribe, () => selector(state));
+}
+
+/** The Story phone registers here: one call per batch of stream datagrams the MN received. */
+export function onData(fn) {
+  dataListeners.add(fn);
+  return () => dataListeners.delete(fn);
 }
 
 /** The topology map registers here to animate each forwarded or dropped frame. */
@@ -111,6 +124,8 @@ export function applyItems(items, animate = true) {
   const patch = {};
   const animateList = [];
   const walk = [];
+  const caps = [];
+  const dataList = [];
 
   for (const it of items) {
     if (it.type === 'state') {
@@ -118,7 +133,11 @@ export function applyItems(items, animate = true) {
       states[it.node] = it.state;
       continue;
     }
-    if (it.type === 'features') { patch.features = it.features; continue; }
+    if (it.type === 'features') {
+      patch.features = it.features;
+      roSwitched(!!it.features.route_optimization);
+      continue;
+    }
     if (it.type === 'phase') { patch.phase = it.phase; continue; }
     if (it.type === 'reset' || it.type === 'cleared') {
       packets = [];
@@ -130,6 +149,7 @@ export function applyItems(items, animate = true) {
       patch.selectedNo = null;
       patch.walkthrough = [];
       recentLearn.clear();
+      resetStoryContext();
       if (it.type === 'reset') patch.resetAt = it.resetAt || Date.now();
       if (it.features) patch.features = it.features;
       continue;
@@ -139,6 +159,11 @@ export function applyItems(items, animate = true) {
     // the hello snapshot and the first batch can overlap; event numbers are monotonic
     if (ev.no <= (patch.lastNo ?? s.lastNo)) continue;
     patch.lastNo = ev.no;
+    if (animate && (ev.kind !== 'packet' || ev.verdict === 'dropped')) {
+      const c = captionFor(ev, s);
+      if (c) caps.push({ id: ++captionId, ...c });
+    }
+    if (ev.kind === 'data_rx' && animate) dataList.push(ev);
     if (ev.kind === 'packet') {
       packets = packets || s.packets.slice();
       packets.push(ev);
@@ -165,8 +190,9 @@ export function applyItems(items, animate = true) {
     if (ev.kind === 'data_rx' || ev.kind === 'reply_rx' || ev.kind === 'smooth_forward') continue;
     if (ev.kind === 'scenario') {
       patch.scenario = ev.state === 'running' || ev.state === 'step'
-        ? { id: ev.scenario, step: ev.step, total: ev.total, note: ev.summary }
+        ? { id: ev.scenario, step: ev.step, total: ev.total, note: ev.summary, chapter: ev.chapter, chapters: ev.chapters }
         : null;
+      if (ev.walk) patch.walkCue = { to: ev.walk, no: ev.no };
       patch.narration = [...(patch.narration || s.narration), { ts: ev.ts, text: ev.summary }].slice(-6);
     }
     events = events || s.events.slice();
@@ -186,8 +212,10 @@ export function applyItems(items, animate = true) {
   if (handoffs) patch.handoffs = handoffs;
   if (overhead) patch.overhead = overhead;
   if (states) patch.states = states;
+  if (caps.length) patch.captions = [...s.captions, ...caps].slice(-MAX_CAPTIONS);
   if (walk.length) patch.walkthrough = [...(patch.walkthrough || s.walkthrough), ...walk].slice(-MAX_WALK);
   setState(patch);
+  if (dataList.length) dataListeners.forEach((fn) => fn(dataList));
   if (animateList.length) {
     const list = animateList.length > 60 ? animateList.slice(-60) : animateList;
     packetListeners.forEach((fn) => fn(list));

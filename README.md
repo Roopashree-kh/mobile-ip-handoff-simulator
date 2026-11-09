@@ -83,6 +83,25 @@ Then open http://localhost:5173. Press Ctrl+C in the console window to stop ever
 
 `run_all.py` runs `npm install` itself the first time if `node_modules` is missing.
 
+## Story mode and Expert mode
+
+The console opens in Story mode, a single screen for someone who has never heard of Mobile IP. The toggle at the top switches to Expert mode, which is the full console described in the next section. Both modes read the same live state, so switching in the middle of the tour shows the same simulation, and the packet inspector holds the packets that Story mode drew as envelopes.
+
+- Scene: Home with its router (the home agent), Campus Wi-Fi, the Metro and the Airport, with the Internet and the video server above. Click a place, or use Walk to..., and Priya walks there. The real handoff is sent when she arrives.
+- Phone: a video that advances one frame for every stream datagram the mobile node really receives. When packets stop, the picture freezes, a buffering spinner appears and Frames lost counts up. Frames that turn up late through smooth handoff are taken back off the count. Under the phone are the permanent home address and the network Priya is reachable through right now.
+- Envelopes: at most one per second, along the path the packets actually take. A plain envelope is a normal packet. An envelope inside an envelope is a tunnelled one, from the home router to Priya's network, or from the server once Shorter path is on. Replies take the short way back unless reverse tunnelling is on.
+- Narrator: one or two plain-English sentences at the bottom, written from the real protocol events, with the last eight in the strip on the right. The technical explanations stay in Expert mode under Protocol walkthrough.
+- Controls: Walk to..., Smooth handoff, Shorter path (route optimization) and Speed. The video stream starts by itself.
+- Start the tour runs `config/scenarios/7_story_tour.json`, eleven chapters in about two minutes: discovery, registration and the tunnel at the campus, two trips to the Metro without and with Smooth handoff, then Shorter path and the drop in delay. Next and Back jump between chapters, and each chapter carries its own setup, so a jump lands in the right state. Skip stops the tour.
+
+Story mode screenshots, at 1920 x 1080: at home, in the middle of a handoff with frames lost, and with Shorter path on.
+
+![Story mode at home](docs/screenshots/story_home.png)
+
+![Story mode mid-handoff](docs/screenshots/story_handoff.png)
+
+![Story mode with Shorter path](docs/screenshots/story_shorter_path.png)
+
 ## Using the console
 
 - Toolbar: Play, Pause, Step and Reset as icon buttons, a speed control from 1x to 20x that multiplies every link delay so packets can be followed by eye, the time elapsed since the last Reset, the scenario picker with Run and Stop, the Learn mode check box, the Analytics drawer, and the gateway connection status at the far right.
@@ -96,7 +115,7 @@ The URL hash `#analytics` opens the drawer on load and `#inspect=reg` selects th
 
 ## Scenario walkthroughs
 
-Pick a scenario in the top bar and press Run. Each one resets the simulation first and narrates its steps in the topology header and the event log.
+In Expert mode, pick a scenario in the top bar and press Run. Each one resets the simulation first and narrates its steps in the topology header and the event log.
 
 1. Commuter. The MN goes home, Campus Wi-Fi, Metro LTE, Airport and home again, eight seconds apart, with the video stream running. Watch the binding move and the losses per handoff in Analytics.
 2. Ping-pong edge. The MN flaps between FA-1 and FA-2 every 1.2 s, first with prefix-based detection and then with lifetime-based detection. The prefix rule follows every flap. The lifetime rule lags because it waits up to three advertisement intervals.

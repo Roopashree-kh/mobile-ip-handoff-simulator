@@ -7,6 +7,12 @@
 //   { "repeat": n, "steps": [...] }                  loop
 //   { "summary": true }                              emit the phase comparison table
 // Any step may carry "note", which is shown on the dashboard as the scenario narration.
+//
+// A scenario may use "chapters" instead of "steps" (the Story mode tour):
+//   { "chapters": [ { "note": "...", "walk": "fa1", "setup": [...], "steps": [...] } ] }
+// Each chapter announces itself with its note (and an optional walk cue for the Story scene),
+// then runs its steps. Running with a start chapter replays only that chapter's setup first,
+// so Next and Back can jump straight to any chapter and find the same simulator state.
 'use strict';
 
 const fs = require('fs');
@@ -30,7 +36,7 @@ class ScenarioRunner {
   }
 
   status() {
-    return this.current ? { id: this.current.id, title: this.current.title, step: this.step, total: this.total } : null;
+    return this.current ? { id: this.current.id, title: this.current.title, step: this.step, total: this.total, chapter: this.chapter } : null;
   }
 
   stop(reason = 'stopped') {
@@ -42,16 +48,18 @@ class ScenarioRunner {
     this.hooks.emit({ kind: 'scenario', node: 'GATEWAY', summary: `Scenario "${s.title}" ${reason}`, scenario: s.id, state: reason });
   }
 
-  async run(scenario) {
+  async run(scenario, start = 0) {
     this.stop('interrupted by another scenario');
     const token = ++this.token;
     this.current = scenario;
     this.step = 0;
-    this.total = countSteps(scenario.steps);
+    this.chapter = null;
+    this.total = scenario.chapters ? scenario.chapters.length : countSteps(scenario.steps);
     this.hooks.emit({ kind: 'scenario', node: 'GATEWAY', summary: `Scenario "${scenario.title}" started: ${scenario.description}`,
-      scenario: scenario.id, state: 'running' });
+      scenario: scenario.id, state: 'running', total: this.total, chapters: scenario.chapters ? this.total : undefined, chapter: null });
     try {
-      await this.exec(scenario.steps, token);
+      if (scenario.chapters) await this.chapters(scenario, Math.max(0, Math.min(start, scenario.chapters.length - 1)), token);
+      else await this.exec(scenario.steps, token);
     } catch (e) {
       if (e.message !== 'cancelled') throw e;
       return;
@@ -59,14 +67,28 @@ class ScenarioRunner {
     if (token === this.token) this.stop('finished');
   }
 
-  async exec(steps, token) {
+  async chapters(scenario, start, token) {
+    const list = scenario.chapters;
+    for (let i = start; i < list.length; i += 1) {
+      const c = list[i];
+      if (i === start && start > 0 && c.setup) await this.exec(c.setup, token);
+      if (token !== this.token) throw new Error('cancelled');
+      this.chapter = i;
+      this.step = i + 1;
+      this.hooks.emit({ kind: 'scenario', node: 'GATEWAY', summary: c.note, scenario: scenario.id, state: 'step',
+        step: i + 1, total: list.length, chapter: i, chapters: list.length, walk: c.walk || null });
+      await this.exec(c.steps || [], token, false);
+    }
+  }
+
+  async exec(steps, token, count = true) {
     for (const st of steps) {
       if (token !== this.token) throw new Error('cancelled');
       if (st.repeat) {
         for (let i = 0; i < st.repeat; i += 1) await this.exec(st.steps, token);
         continue;
       }
-      this.step += 1;
+      if (count) this.step += 1;
       if (st.note) this.hooks.emit({ kind: 'scenario', node: 'GATEWAY', summary: st.note, scenario: this.current.id, state: 'step', step: this.step, total: this.total });
       if (st.reset) this.hooks.reset();
       if (st.set) this.hooks.set(st.set);

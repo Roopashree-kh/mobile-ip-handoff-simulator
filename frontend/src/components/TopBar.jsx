@@ -46,15 +46,46 @@ export default function TopBar() {
   const learn = useStore((s) => s.learn);
   const [pick, setPick] = useState('');
   const scale = Number(features.time_scale || 1);
+  const mode = useStore((s) => s.mode);
   const sep = <div className="h-6 w-px bg-noc-line" />;
+  const modeToggle = (
+    <div className="seg shrink-0" role="group" aria-label="Screen">
+      {[['story', 'Story'], ['expert', 'Expert']].map(([k, label]) => (
+        <button key={k} className="!font-sans !text-sm !px-3" aria-pressed={mode === k} onClick={() => setState({ mode: k })}>
+          {label}<span className={mode === 'expert' ? 'hidden 2xl:inline' : ''}> mode</span></button>
+      ))}
+    </div>
+  );
+  const status = (
+    <span className="ml-auto flex items-center gap-1.5 text-sm text-noc-ink whitespace-nowrap" data-tip={connected ? 'Gateway WebSocket open' : 'Reconnecting to the gateway'}>
+      <span className={`w-2 h-2 rounded-full ${connected ? 'bg-[#2f9e44]' : 'bg-bad'}`} />
+      {connected ? 'Connected' : 'Offline'}
+    </span>
+  );
+  const title = (
+    <div className="flex items-center gap-2.5 min-w-0 shrink-0">
+      <Logo />
+      <h1 className="text-base font-semibold text-noc-head1 whitespace-nowrap">Mobile IPv4 Handoff<span className="hidden 2xl:inline"> Simulator</span></h1>
+      <span className={`badge border-noc-line bg-noc-raised text-noc-dim font-mono ${mode === 'expert' ? 'hidden 2xl:inline-flex' : ''}`}>RFC 3344</span>
+    </div>
+  );
+
+  if (mode !== 'expert') {
+    return (
+      <header className="h-12 shrink-0 flex items-center gap-3 px-4 border-b border-noc-line bg-white">
+        {title}
+        {sep}
+        {modeToggle}
+        {status}
+      </header>
+    );
+  }
 
   return (
     <header className="h-12 shrink-0 flex items-center gap-3 px-4 border-b border-noc-line bg-white">
-      <div className="flex items-center gap-2.5 min-w-0 shrink-0">
-        <Logo />
-        <h1 className="text-base font-semibold text-noc-head1 whitespace-nowrap">Mobile IPv4 Handoff<span className="hidden 2xl:inline"> Simulator</span></h1>
-        <span className="badge border-noc-line bg-noc-raised text-noc-dim font-mono">RFC 3344</span>
-      </div>
+      {title}
+      {sep}
+      {modeToggle}
       {sep}
       <div className="flex items-center gap-1">
         {paused
@@ -66,7 +97,7 @@ export default function TopBar() {
       {paused && <span className="badge border-warn-line bg-warn-soft text-warn font-mono">{buffered} held</span>}
       {sep}
       <div className="flex items-center gap-2" data-tip="Slow-motion factor applied to every link delay">
-        <span className="text-sm text-noc-dim">Speed</span>
+        <span className="hidden 2xl:inline text-sm text-noc-dim">Speed</span>
         <div className="seg" role="group" aria-label="Speed">
           {SPEEDS.map((v) => (
             <button key={v} aria-pressed={scale === v} onClick={() => setFeature({ time_scale: v })}>{v}x</button>
@@ -90,10 +121,7 @@ export default function TopBar() {
         <Switch small checked={learn} onChange={setLearn} label={<span className="whitespace-nowrap">Learn mode</span>} />
       </div>
       <button className="btn" onClick={() => setState({ analyticsOpen: true })}><Icon name="chart" size={14} />Analytics</button>
-      <span className="ml-auto flex items-center gap-1.5 text-sm text-noc-ink whitespace-nowrap" data-tip={connected ? 'Gateway WebSocket open' : 'Reconnecting to the gateway'}>
-        <span className={`w-2 h-2 rounded-full ${connected ? 'bg-[#2f9e44]' : 'bg-bad'}`} />
-        {connected ? 'Connected' : 'Offline'}
-      </span>
+      {status}
     </header>
   );
 }

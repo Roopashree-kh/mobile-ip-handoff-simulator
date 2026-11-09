@@ -51,6 +51,7 @@ The console, the scenarios that drive it and the written material.
 | `frontend/src/components/ControlPanel.jsx` | Handoffs, feature switches, link settings, stream, demos, agent tools |
 | `frontend/src/components/AgentPanel.jsx` | MN state machine, HA bindings, FA visitor lists, CN cache |
 | `frontend/src/components/PacketInspector.jsx` | Packet list, filter, protocol tree, hex dump, event log, Learn mode walkthrough |
+| `frontend/src/components/story/*.jsx`, `frontend/src/lib/story.js` | Story mode: scene, phone, narrator, tour controls, plain-English captions |
 | `frontend/src/components/AnalyticsDrawer.jsx` | Recharts graphs, tables, CSV export |
 | `frontend/src/lib/*.js` | Store, WebSocket client, filter language, helpers |
 | `gateway/scenarios.js`, `config/scenarios/*.json` | Scenario runner and the six scenarios |
