@@ -7,6 +7,7 @@ const PATHS = {
   step: <><path d="M5 4.5v11l7.5-5.5z" fill="currentColor" stroke="none" /><rect x="13.5" y="4.5" width="2.2" height="11" rx="0.6" fill="currentColor" stroke="none" /></>,
   reset: <><path d="M4.5 10a5.5 5.5 0 1 0 1.7-4" /><path d="M4.5 3.5v3h3" /></>,
   chevron: <path d="M7 8l3 3 3-3" />,
+  gauge: <><path d="M3.5 14a6.5 6.5 0 1 1 13 0" /><path d="M10 14l3.2-4.2" /><circle cx="10" cy="14" r="0.8" fill="currentColor" /></>,
   chart: <><path d="M4 16V9" /><path d="M8.5 16V5" /><path d="M13 16v-5" /><path d="M17 16V7" /></>,
   close: <><path d="M5.5 5.5l9 9" /><path d="M14.5 5.5l-9 9" /></>,
   download: <><path d="M10 4v8" /><path d="M6.5 9l3.5 3.5L13.5 9" /><path d="M4.5 15.5h11" /></>,

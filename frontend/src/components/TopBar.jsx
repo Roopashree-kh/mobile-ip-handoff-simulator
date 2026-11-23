@@ -108,7 +108,7 @@ export default function TopBar() {
       <Elapsed />
       {sep}
       <div className="flex items-center gap-2 min-w-0">
-        <select className="sel w-40 2xl:w-48" value={pick} onChange={(e) => setPick(e.target.value)} aria-label="Scenario">
+        <select className="sel w-36 2xl:w-48" value={pick} onChange={(e) => setPick(e.target.value)} aria-label="Scenario">
           <option value="">Choose a scenario</option>
           {scenarios.map((s) => <option key={s.id} value={s.id} title={s.description}>{s.title}</option>)}
         </select>
@@ -120,8 +120,10 @@ export default function TopBar() {
       <div data-tip="Explain each protocol step with its RFC section">
         <Switch small checked={learn} onChange={setLearn} label={<span className="whitespace-nowrap">Learn mode</span>} />
       </div>
-      <button className="btn" onClick={() => setState({ qualityOpen: true })}><Icon name="chart" size={14} />Quality</button>
-      <button className="btn" onClick={() => setState({ analyticsOpen: true })}><Icon name="chart" size={14} />Analytics</button>
+      <button className="btn" onClick={() => setState({ qualityOpen: true })} data-tip="Quality of service: delay, jitter, loss, MOS, coverage and the Metro ride result" aria-label="Quality">
+        <Icon name="gauge" size={14} /><span className="hidden 2xl:inline">Quality</span></button>
+      <button className="btn" onClick={() => setState({ analyticsOpen: true })} data-tip="Analytics: latency, handoffs, encapsulation overhead" aria-label="Analytics">
+        <Icon name="chart" size={14} /><span className="hidden 2xl:inline">Analytics</span></button>
       {status}
     </header>
   );
