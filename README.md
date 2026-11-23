@@ -15,6 +15,8 @@ It runs on Windows 10 and 11 without administrator rights, and equally on Linux 
 - Reverse tunneling, and an ingress filter on the backbone that shows why it is needed.
 - Triangle routing against route optimization, using Binding Update, Binding Acknowledge, Binding Warning and Binding Request, plus smooth handoff through the previous FA.
 - A Wireshark-style inspector and a real libpcap export that opens in Wireshark.
+- Quality of service, judged against the standards: voice, video and chat flows measured for one-way delay, RFC 3550 jitter, loss, late loss and interruption time, with a G.107 E-model score for the call and a Good, Fair or Poor verdict against ITU-T G.1010, Y.1541 and G.114 targets.
+- Real-world coverage: a Metro ride through a 20 second tunnel with no signal at all, five switchable rescue features, and a side by side result of the same ride with them off and on.
 
 ## Architecture
 
@@ -88,11 +90,12 @@ Then open http://localhost:5173. Press Ctrl+C in the console window to stop ever
 The console opens in Story mode, a single screen for someone who has never heard of Mobile IP. The toggle at the top switches to Expert mode, which is the full console described in the next section. Both modes read the same live state, so switching in the middle of the tour shows the same simulation, and the packet inspector holds the packets that Story mode drew as envelopes.
 
 - Scene: Home with its router (the home agent), Campus Wi-Fi, the Metro and the Airport, with the Internet and the video server above. Click a place, or use Walk to..., and Priya walks there. The real handoff is sent when she arrives.
-- Phone: a video that advances one frame for every stream datagram the mobile node really receives. When packets stop, the picture freezes, a buffering spinner appears and Frames lost counts up. Frames that turn up late through smooth handoff are taken back off the count. Under the phone are the permanent home address and the network Priya is reachable through right now.
+- Phone: three apps, each with a small status light. The video plays a picture that freezes, with a buffering spinner, exactly when the real video flow stops, and Frames lost counts up. The call shows a sound meter that goes flat when the voice flow stops, and says Clear, Choppy, Cutting out or Silent. The chat says Delivered, or Sending when a message is still waiting for its acknowledgement. Above the phone a badge says Smooth, A little choppy or Breaking up with one plain sentence, and no numbers. Under the phone is the network Priya is reachable through right now.
+- Metro ride tab: the same screen with a route from Home through Campus and Station A, a tunnel, Station B and the Airport. The train is the moving marker. Above it are signal bars and the network name, and in the tunnel the bars are empty. Start the ride, and switch the five rescue tools on one at a time. Each has one plain sentence.
 - Envelopes: at most one per second, along the path the packets actually take. A plain envelope is a normal packet. An envelope inside an envelope is a tunnelled one, from the home router to Priya's network, or from the server once Shorter path is on. Replies take the short way back unless reverse tunnelling is on.
 - Narrator: one or two plain-English sentences at the bottom, written from the real protocol events, with the last eight in the strip on the right. The technical explanations stay in Expert mode under Protocol walkthrough.
-- Controls: Walk to..., Smooth handoff, Shorter path (route optimization) and Speed. The video stream starts by itself.
-- Start the tour runs `config/scenarios/7_story_tour.json`, eleven chapters in about two minutes: discovery, registration and the tunnel at the campus, two trips to the Metro without and with Smooth handoff, then Shorter path and the drop in delay. Next and Back jump between chapters, and each chapter carries its own setup, so a jump lands in the right state. Skip stops the tour.
+- Controls: Walk to..., Smooth handoff, Shorter path (route optimization) and Speed. The video, the call and the chat start by themselves.
+- Start the tour runs `config/scenarios/7_story_tour.json`, thirteen chapters: discovery, registration and the tunnel at the campus, two trips to the Metro without and with Smooth handoff, then Shorter path and the drop in delay, and last two Metro ride chapters, the first with every rescue tool off and the second with all five on. The first eleven take about two minutes and each Metro ride chapter about 95 seconds. Next and Back jump between chapters, and each chapter carries its own setup, so a jump lands in the right state. Skip stops the tour.
 
 Story mode screenshots, at 1920 x 1080: at home, in the middle of a handoff with frames lost, and with Shorter path on.
 
@@ -113,6 +116,80 @@ Story mode screenshots, at 1920 x 1080: at home, in the middle of a handoff with
 
 The URL hash `#analytics` opens the drawer on load and `#inspect=reg` selects the newest matching packet. We use both for screenshots in the report.
 
+## Quality of service
+
+Three flows run from the correspondent to the mobile node, each with its own port, flow id and profile in `config/traffic.json`.
+
+| Flow | What it is | Judged by |
+|---|---|---|
+| Voice | G.711-like, a 160-byte payload every 20 ms, 50 packets a second | MOS from the E-model, one-way delay against G.114, loss and jitter |
+| Video | 10 to 25 frames a second, a larger key frame every second, each frame split into packets of at most 1000 bytes | freeze count and total freeze time, Y.1541 class 1, loss and delay |
+| Chat | a short message every 3 to 5 s, acknowledged, retransmitted until acknowledged | delivery time and whether anything was lost |
+
+The mobile node measures, over a sliding window and over the whole run, the one-way delay (mean, 95th percentile, maximum), the RFC 3550 jitter, the loss ratio, the longest loss burst, out-of-order packets, late packets (arrived after the playout deadline, counted as lost exactly as a real player would) and the interruption time (last packet on the old link to first on the new). The playout buffer is adaptive and sized from the jitter, or fixed, in `config/traffic.json`.
+
+Every target is in `config/qos_targets.json` with a source and a `verified` flag. A flow gets Good when every check passes, Fair when a Y.1541 objective is missed but the G.1010 limit is not, and Poor when a limit is passed or nothing has arrived for a second. The reason is in words, for example "jitter 62 ms is above the 50 ms limit".
+
+- Expert mode, Quality button: live numbers for the three flows, the compliance table (metric, measured, target, result, source), charts of delay, jitter and MOS with the handoffs as dashed lines and dead zones as grey bands, the interruption list, and the QoS timeline as a CSV download (`/export/qos.csv` on the gateway).
+- Story mode: only the badge and the three app lights.
+
+The standards used, the E-model simplifications and the numbers we could not verify from the documents are listed in `docs/PROTOCOL_NOTES.md`.
+
+## The Metro ride
+
+The route is in `config/coverage.json`: Home, Campus, Station A, a tunnel of 500 m, Station B and the Airport, 2150 m at 25 m/s, so the tunnel takes 20 s and the whole ride about 86 s. Each network has a signal in dBm that depends on position. Where every network is below -100 dBm the core router drops everything to and from the phone. With every feature off, the phone moves to whichever network is strongest right now.
+
+The five switchable features, in Expert mode under Rescue features and in Story mode under the Metro ride tab:
+
+| Feature | One line | Where it comes from |
+|---|---|---|
+| Smart handoff | Switch only when the signal is weak and another network is clearly stronger for a moment. | our own policy |
+| Two networks at once | While two networks overlap, stay on both, the home router sends a copy to each and the phone drops the duplicate. | RFC 3344 S flag |
+| Hold and forward | While the phone has no signal the home router keeps its packets and hands them over when it is back. Calls are not kept for long, video for about 2 s, chat is kept. | our own extension, not RFC 3344 |
+| Adaptive video | The server sends a smaller picture when the phone reports loss or a weak signal, then restores it. | our own feedback loop |
+| Fast re-registration | The moment the signal returns the phone announces itself instead of waiting for the next beacon. | RFC 3344 allows it, the trigger is ours |
+
+### Run the Metro ride
+
+1. `start.bat` (or `python run_all.py`) and open http://localhost:5173.
+2. Story mode: open the Metro ride tab and press Start the ride. About 86 seconds.
+3. Expert mode: pick Metro ride (current switches) in the scenario list and press Run, or open Quality and press Run the ride. About 105 seconds including the start and the summary.
+4. The comparison: pick Metro ride, features off then on and press Run, or press Compare: off then on in the Quality drawer. About 3.5 minutes. When it ends the Quality drawer shows the two runs side by side under Metro ride result, with a CSV download.
+
+### Result
+
+The ride was run twice with each setting, on the same Windows laptop, 86 s of riding plus 8 s to settle. The signal at every position is identical in all four runs, so the differences come from the switches and from timing.
+
+| Measure | Off, run 1 | Off, run 2 | All on, run 1 | All on, run 2 |
+|---|---|---|---|---|
+| Handoffs | 15 | 19 | 3 | 3 |
+| Voice interruptions of 100 ms or more (count, total) | 11, 21.7 s | 19, 22.8 s | 3, 20.8 s | 7, 21.1 s |
+| Voice loss including late packets | 21.6 % | 22.2 % | 20.6 % | 20.3 % |
+| Voice worst MOS, whole ride | 1.00 | 1.00 | 1.00 | 1.00 |
+| Voice worst MOS outside the tunnel | 2.03 | 1.37 | 2.56 | 3.38 |
+| Voice time with MOS below 3.1 | 32.5 s | 33.2 s | 28.2 s | 23.8 s |
+| Video frames lost | 699 of 2547 (27.4 %) | 730 of 2546 (28.7 %) | 269 of 1564 (17.2 %) | 249 of 1545 (16.1 %) |
+| Video picture frozen (total, freezes) | 28.1 s in 9 | 29.6 s in 14 | 23.0 s in 6 | 23.9 s in 5 |
+| Chat messages lost | 0 of 25 | 0 of 25 | 0 of 25 | 0 of 25 |
+| Chat slowest delivery | 23.3 s | 23.4 s | 17.8 s | 17.9 s |
+| Chat mean delivery | 3.25 s | 3.22 s | 2.18 s | 1.96 s |
+| Chat messages that needed a retransmission | 6 | 7 | 2 | 1 |
+| Back after the tunnel, voice, video, chat | 0.34, 0.34, 1.46 s | 0.07, 0.09, 0.29 s | 0.16, 0.24, 0.15 s | 0.17, 0.23, 0.16 s |
+| Verdict, voice, video, chat | Poor, Poor, Poor | Poor, Poor, Poor | Poor, Poor, Poor | Poor, Poor, Poor |
+
+Reading it honestly:
+
+- The tunnel is 20 s with no signal. Sound and picture produced in it are gone, and no feature brings them back. That is why voice loss is about 20 per cent and the worst MOS is 1.00 in every run, and why every flow is Poor over the whole ride.
+- The clearest effect is the handoffs. The baseline makes 15 to 19 and flips back and forth at each cell edge. Smart handoff makes 3, one per cell. The baseline numbers move from run to run because the flips depend on timing. The settings with features on were steady.
+- Video loses a smaller share of its frames (16 to 17 per cent against 27 to 29) and freezes for 5 to 6 s less. Part of that is the adaptive sender, which sends fewer frames while the signal is weak, so compare the shares and not the counts.
+- Chat loses nothing in any run, because it is retransmitted. With hold and forward the messages are handed over at once when the phone returns, so the mean delivery time falls from about 3.2 s to about 2 s. The slowest message still waited most of the tunnel.
+- Fast re-registration did not shorten the recovery of voice and video in our runs. The baseline's one-second discovery loop usually fires within a fraction of a second of the signal returning, so the time to recover is already short. The 0.07 s in baseline run 2 is luck.
+- Hold and forward kept 1069 packets in run 1 and released 26: 12 chat messages, 7 voice and 7 video packets. The rest, 726 voice and 317 video packets, were older than their limit (150 ms and 2 s) and were dropped, as designed.
+- The worst MOS outside the tunnel is the noisiest row. It depends on how many 100 ms gaps fall in one five-second window.
+
+These are four runs and not a statistical study.
+
+
 ## Scenario walkthroughs
 
 In Expert mode, pick a scenario in the top bar and press Run. Each one resets the simulation first and narrates its steps in the topology header and the event log.
@@ -123,6 +200,8 @@ In Expert mode, pick a scenario in the top bar and press Run. Each one resets th
 4. Replayed request. The MN re-sends its previous Registration Request unchanged. The HA answers 133 in timestamp mode, then again in nonce mode.
 5. Ingress filter. With filtering on, the MN's replies, sent by triangle routing with source 10.1.0.50 from 10.2.0.0/24, die at the backbone and the CN reply counter stops. Turning on reverse tunneling sends them through the HA and they arrive again.
 6. Triangle vs optimized. The same stream is measured for ten seconds each way. In our runs triangle routing averaged about 84 ms over 3 segments (stretch 1.5) and route optimization about 58 ms over 2 segments (stretch 1.0).
+7. Story mode tour. Thirteen chapters, the last two on the Metro ride.
+8. Metro ride (current switches), and 9. Metro ride, features off then on. Both start with voice, video and chat running and the train at Home.
 
 ## Screenshots
 
@@ -138,6 +217,20 @@ Analytics drawer:
 
 ![Analytics](docs/screenshots/analytics.png)
 
+Quality drawer at 1920 x 1080, paused in the middle of the tunnel: voice and video Poor with no packets for 15.7 s, chat still Good, and the compliance table with the source of each target. The grey bands in the charts are dead zones and the dashed lines are handoffs:
+
+![Quality drawer](docs/screenshots/quality_drawer.png)
+
+The Metro ride result at 1366 x 768, features off against all on, from the second pair of runs in the table above:
+
+![Metro ride result](docs/screenshots/quality_results.png)
+
+Story mode, Metro ride tab, at 1920 x 1080. In the tunnel the badge says Breaking up, the video is frozen, the call is silent and the chat is sending again. After the tunnel, on the way to the airport hotspot:
+
+![Story mode in the tunnel](docs/screenshots/story_metro_tunnel.png)
+
+![Story mode after the tunnel](docs/screenshots/story_metro_after.png)
+
 Packet inspector enlarged and paused, with an IP-in-IP packet from the HA to FA-2 selected. The outer header is folded so the encapsulation and inner header show, above the hex dump. The map scales down to make room:
 
 ![Inspector](docs/screenshots/inspector.png)
@@ -147,7 +240,10 @@ Packet inspector enlarged and paused, with an IP-in-IP packet from the HA to FA-
 ```
 agents/            Python agents, standard library only
   mip/             shared library: ipv4, messages, encap, auth, policy, decode, link, node, telemetry, config, clock
-config/            topology.json and scenarios/*.json
+                   qos, qosmgr (measurement), traffic (voice, video, chat sources), radio and radiomodel (coverage)
+config/            topology.json, scenarios/*.json and the new files:
+                   qos_targets.json (every target with its source), traffic.json (flows, ports, playout, feedback),
+                   coverage.json (route, cells, dead zones), resilience.json (the five features and their settings)
 gateway/           Node.js WebSocket gateway, metrics, scenario runner, pcap writer
 frontend/          React 18 + Vite + Tailwind console
 tools/             debugging aids: telemetry tail, command sender, start and stop scripts
@@ -170,5 +266,11 @@ With the gateway stopped, `python tools/telemetry_tail.py` prints agent events i
 - RFC 1256, ICMP Router Discovery Messages
 - RFC 826, An Ethernet Address Resolution Protocol
 - RFC 2827, Network Ingress Filtering
+- RFC 3550, RTP, section 6.4.1 and appendix A.8 (interarrival jitter)
+- ITU-T G.1010 (2001), End-user multimedia QoS categories, Appendix I
+- ITU-T Y.1541 (2011), Network performance objectives for IP-based services
+- ITU-T G.114 (2003), One-way transmission time
+- ITU-T G.107 (2015), The E-model, and G.113 (2024), Appendix I
+- R. Ramjee, J. Kurose, D. Towsley and H. Schulzrinne, Adaptive playout mechanisms for packetized audio applications in wide-area networks, IEEE INFOCOM 1994
 
 What is implemented exactly and what is simplified is listed in `docs/PROTOCOL_NOTES.md`.

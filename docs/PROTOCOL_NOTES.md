@@ -95,6 +95,106 @@ In both cases the MN tracks the demo request separately from its real registrati
 
 One limitation: the loss count only means something while the CN stream is running, and a handoff that starts before the previous one has been evaluated closes the earlier window early.
 
+## Application flows and quality measurement
+
+This part is ours. Mobile IP does not define it. We measure the way the ITU-T and IETF documents say to measure, and we say below where we simplified. Every target number lives in `config/qos_targets.json` with a `source` and a `verified` flag. `verified: true` means we read the number in the document itself. `verified: false` means it is project policy or we could not read it.
+
+### The three flows
+
+| Flow | What the correspondent sends | Config |
+|---|---|---|
+| Voice | G.711-like, one packet every 20 ms, 160 bytes of media, 50 packets per second | `config/traffic.json`, flows.voice |
+| Video | A frame every 1/fps seconds (25, 15 or 10 fps by level), a larger key frame every second, each frame split into packets of at most 1000 bytes | flows.video |
+| Chat | One short message every 3 to 5 s. The receiver acknowledges each one. The sender retransmits with a timeout that grows from 1 s to 4 s, up to 14 times | flows.text |
+
+Every packet starts with a 28-byte flow header (magic MIPQ, flow id, type, flags, route tag, sequence, send time in ms, packet interval, frame id, fragment index and count). It stands in for the 12-byte RTP header plus the extra fields we need. The media payload follows it, so a voice packet is 188 bytes of UDP payload. The older single stream on port 5004 is unchanged and the first six scenarios still use it.
+
+### What is measured, and against what
+
+| Measure | How we compute it | Reference |
+|---|---|---|
+| One-way delay | Arrival time minus the stamped send time. Both ends share one calibrated clock because everything runs on one machine | ITU-T G.114 clause 4, ITU-T Y.1541 Table 1 (IPTD) |
+| Jitter | The smoothed estimate J = J + (|D| - J) / 16 on consecutive in-order arrivals, where D is the change in one-way delay | RFC 3550 section 6.4.1 and appendix A.8 |
+| Packet loss | Gaps in the sequence numbers, plus packets that arrive after their playout deadline (late loss). A packet that turns up out of order after a gap was declared is taken back out of the loss count | ITU-T Y.1541 Table 1 (IPLR), ITU-T G.1010 Table I.1 |
+| Longest loss burst, out-of-order, duplicates | Counted from the same sequence record | none |
+| Interruption time | Gap between the last in-order packet before a link change or loss and the first one after it, when it is at least `interruption_min_ms` | none |
+| Video freeze | A frame is shown only if all its fragments arrived before its deadline and the decoder has a good reference. After any failed frame the picture stays stuck until the next key frame. A freeze is a gap between two shown frames of more than 3 frame intervals and at least 200 ms | none, project policy |
+| Chat delivery time | Arrival of the first copy of a message minus the time the sender first sent it. Retransmitted copies are acknowledged again and discarded | ITU-T G.1010 Table I.2, nearest row |
+
+Each number is kept over a sliding window (5 s by default) and over the whole run.
+
+### Playout buffer
+
+A packet that arrives after the moment a player would have needed it is late, and it counts as lost, exactly as in a real player. The buffer is adaptive by default. The playout offset is the running mean delay d plus a buffer of k times the running deviation v, held between a minimum and a maximum, with d and v exponential averages (alpha 0.9). This is algorithm 1 of Ramjee, Kurose, Towsley and Schulzrinne (INFOCOM 1994), so the buffer follows the measured jitter. Two simplifications: we adapt on every packet and not only at talkspurt boundaries, and a delay that is more than a clamp above the average is clamped before it enters the average. A fixed buffer is available with `mode: fixed` in the flow's playout block.
+
+### E-model score for voice (ITU-T G.107)
+
+R = 93.2 - Id - Ie_eff, and MOS = 1 + 0.035 R + R (R - 60) (100 - R) x 7e-6, clamped to 1 to 4.5. Id is the delay impairment Idd of equation 7-27 with the default delay sensitivity (mT 100 ms, sT 1). Ie_eff = Ie + (95 - Ie) x Ppl / (Ppl / BurstR + Bpl) with the G.711 values Ie 0 and Bpl 25.1 (G.113 Appendix I, with packet loss concealment). The simplifications, all of them:
+
+- The default R of 93.2 already contains the default values of Ro, Is and A, so we do not model those terms separately.
+- The echo terms Idte and Idle are taken as zero. That assumes good echo control.
+- Delay is the playout offset plus 20 ms of codec packetisation. The 20 ms is our own figure, not a table value.
+- Ppl is the loss over the window, network loss plus late packets. BurstR is the mean observed burst length divided by the length expected for random loss, and we hold it at 1 or above so a total blackout cannot divide by zero.
+- The formula for MOS dips just under 1 for very small R, so the result is clamped to 1.
+- The bands "satisfied" and "many users dissatisfied" are read from G.107 Table B.1 (R 80 gives MOS 4.03, R 60 gives MOS 3.10). We use 4.0 and 3.1 as the pass and limit values.
+
+### Verdicts
+
+Each check has a pass value and, where a standard gives one, a hard limit. Inside the pass value is Pass. Past the pass value but inside the limit, or where no limit exists, is Fair. Past the hard limit is Poor. A flow with no packets for 1 s is Poor whatever else it shows. The reason is the first failing check in words, for example "jitter 62 ms is above the 50 ms limit".
+
+| Check | Pass | Hard limit | Source |
+|---|---|---|---|
+| Voice delay, mouth to ear | 150 ms | 400 ms | G.114 clause 4, G.1010 Table I.1 |
+| Voice network delay (mean) | 100 ms | none | Y.1541 Table 1 class 0 |
+| Jitter, voice and video | 50 ms | none | Y.1541 Table 1 class 0 and class 1 |
+| Voice loss | 0.1 per cent | 3 per cent | Y.1541 class 0 IPLR 1e-3, G.1010 Table I.1 |
+| Voice MOS | 4.0 | 3.1 | G.107 Table B.1 |
+| Video delay incl. buffer | 150 ms | 400 ms | G.1010 Table I.1, videophone |
+| Video network delay (mean) | 400 ms | none | Y.1541 Table 1 class 1 |
+| Video loss | 0.1 per cent | 1 per cent | Y.1541 class 1, G.1010 Table I.1 videophone |
+| Video frozen time in the window | 0 | 1000 ms | project policy |
+| Chat delivery time | 2 s | 4 s | G.1010 Table I.2, e-mail server access, nearest row |
+| Chat messages lost | 0 | 0 | project policy |
+
+Two comparisons are not like for like and the file says so. Y.1541 defines IPDV as the 1 - 10^-3 quantile of delay minus the minimum delay, and we compare RFC 3550 interarrival jitter with its 50 ms. And G.1010 Table I.1 gives conversational voice a delay variation target of under 1 ms, which we do not use, because a playout buffer removes that variation and Y.1541 gives the network figure we apply. That reasoning is ours.
+
+### What we could not verify from the documents
+
+- G.1010 has no instant messaging row. We used the e-mail server access row of Table I.2 as the nearest one. The zero-loss cell for that row was not read, so lost messages is project policy.
+- G.114 (05/2003) states the 150 ms and 400 ms figures in clause 4. A three-band table of 0 to 150, 150 to 400 and over 400 ms was not found in that edition.
+- The Y.1541 class values were read from the PDF text, whose table layout was scrambled. The class to column assignment matches the published table and the worked example in Note 2, but it was not read cell by cell. Classes 6 and 7 are provisional (Table 3).
+- Y.1540, which defines IPDV, was not fetched. Only the restatement in Y.1541 was read.
+- The exact symbols of G.107 equation 7-30 (BurstR from a two-state model) were lost in the PDF text. We do not use that equation.
+- The G.113 table number for the G.711 Bpl value of 4.8 in the burst-loss part was not captured. We use the 25.1 value of the PLC row.
+
+## Coverage and the Metro ride
+
+This part is ours. The signal model is not from a standard.
+
+Each network has one or more cells at positions along a route. The signal in dBm is the reference level at 1 m minus 10 x n x log10 of the distance, with the distance never below 20 m, plus a small fade that depends only on position, so two rides see exactly the same signal. A dead zone subtracts a large extra loss from every network, which is how a tunnel is modelled. Below the usable threshold (-100 dBm) the core router drops every frame to and from the mobile node on that link and returns a link-layer NAK to the sender, like a missing Wi-Fi acknowledgement. All values are in `config/coverage.json`.
+
+The core router holds the train's position and moves it along the route. It sends the mobile node a measurement frame (kind SIGNAL) a few times a second. That frame is a reading, not a radio frame, so it is delivered even when there is no signal.
+
+The mobile node can be associated with two links at once during an overlap (frames ATTACH_EXTRA and DETACH_EXTRA). That is an emulation of a node with two radios. It exists only so the S flag has something to do.
+
+### What the baseline does
+
+With every feature off, the node does what a naive implementation does: it moves to whichever network is strongest right now, with no margin, no waiting time and no averaging. This is deliberately simple, and it ping-pongs where two cells cross. A real phone has more sense than that, so read the baseline as a lower bound.
+
+### The five switchable features
+
+| Feature | In RFC 3344? | What is ours |
+|---|---|---|
+| Smart handoff | No. Mobile IP does not say when to hand off | The whole policy: average the readings, switch only when the current signal is below -85 dBm and another network is stronger by 5 dB for 600 ms, and not within 4 s of the last switch. A current network that is already unusable skips the waiting |
+| Two networks at once | Yes, the S flag. RFC 3344 section 3.3 defines the bit. Section 3.6.1.2 says the home agent then keeps the prior bindings and tunnels a separate copy to each care-of address, and the mobile node receives multiple copies. Section 3.8.2.2 covers the home agent side and 4.2.3 the forwarding | When to use it (only while two networks overlap), the dual association in the router, dropping the duplicate by sequence number at the application, and releasing the old link when its signal is gone. The old binding is not deregistered. It is left to expire, and the foreign agent notice below stops the copies to it |
+| Hold and forward | No. This is our own extension | Everything. The foreign agent tells the home agent a visitor is unreachable (a link-layer NAK) or reachable again (it hears the node). The home agent then keeps the packets instead of tunneling them and releases them when the node is reachable or re-registers. Per type, voice older than 150 ms is dropped, video older than 2 s is dropped, chat is kept. The buffer holds 600 packets and drops the least valuable first. The message is our own type 0xE0 over UDP port 434, authenticated with the Foreign-Home extension. A binding whose renewal is 2 s overdue is also treated as unreachable |
+| Adaptive video | No | The receiver reports loss and signal to the sender every 500 ms over the existing reverse path. The sender steps the video down a level when loss is above 4 per cent or the signal is under -92 dBm, steps up after 4 s of good reports, and steps down when it hears nothing for 2 s |
+| Fast re-registration | The pieces are. Section 2.4 lets a node send an Agent Solicitation at any time, and section 3.6.1 lets it register at any time | The trigger. When the signal returns the node solicits and re-registers at once. Without it the node waits for its normal 1 s discovery loop |
+
+### One change to existing behaviour
+
+The foreign agent used to mark a visitor as unreachable after a link-layer NAK and keep it that way until the next registration. That is harsh when the cause is a short loss of signal. It now clears the mark when it hears any frame from the visitor, such as the receiver feedback every 500 ms. Nothing else in the first six scenarios depends on this.
+
 ## Out of scope
 
 Mobile IPv6, the Network Access Identifier, broadcast datagram delivery to the MN (the B flag is decoded but not acted on), FA challenge and response (RFC 3012), and authentication, authorisation and accounting (AAA) integration are not implemented.

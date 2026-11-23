@@ -1,6 +1,6 @@
 {
   "title": "Story mode tour",
-  "description": "Guided two-minute walkthrough for Story mode: discovery, registration, tunnelling, smooth handoff and the shorter path.",
+  "description": "Guided two-minute walkthrough for Story mode: discovery, registration, tunnelling, smooth handoff and the shorter path, and the Metro ride with and without the rescue tools.",
   "chapters": [
     {
       "note": "Meet Priya. She is at home, watching a video on her phone.",
@@ -404,6 +404,114 @@
         }
       ],
       "steps": [
+        {
+          "wait": 6000
+        }
+      ]
+    },
+    {
+      "note": "The Metro ride. Priya takes the train from home to the airport with a call, a video and a chat running. All the rescue tools are off.",
+      "steps": [
+        {
+          "reset": true
+        },
+        {
+          "wait": 1500
+        },
+        {
+          "set": {
+            "coverage": true,
+            "signal_handoff": false,
+            "auto_simultaneous": false,
+            "hold_forward": false,
+            "adaptive_sender": false,
+            "fast_rereg": false,
+            "time_scale": 1
+          }
+        },
+        {
+          "target": "ROUTER",
+          "cmd": "ride_reset"
+        },
+        {
+          "target": "CN",
+          "cmd": "flows_start"
+        },
+        {
+          "wait": 5000
+        },
+        {
+          "target": "ROUTER",
+          "cmd": "ride_start"
+        },
+        {
+          "wait": 29000,
+          "note": "Station A. The Metro network is strong here. The tunnel is next, about 20 seconds with no signal at all."
+        },
+        {
+          "wait": 9000
+        },
+        {
+          "wait": 21000
+        },
+        {
+          "wait": 25000,
+          "note": "Out of the tunnel. Look at what the 20 seconds cost: the call was silent, the video froze and the chat messages waited."
+        },
+        {
+          "wait": 6000
+        }
+      ]
+    },
+    {
+      "note": "The same ride again with the five rescue tools on. Compare how the phone behaves at the cell edges and after the tunnel.",
+      "steps": [
+        {
+          "reset": true
+        },
+        {
+          "wait": 1500
+        },
+        {
+          "set": {
+            "coverage": true,
+            "signal_handoff": true,
+            "auto_simultaneous": true,
+            "hold_forward": true,
+            "adaptive_sender": true,
+            "fast_rereg": true,
+            "time_scale": 1
+          }
+        },
+        {
+          "target": "ROUTER",
+          "cmd": "ride_reset"
+        },
+        {
+          "target": "CN",
+          "cmd": "flows_start"
+        },
+        {
+          "wait": 5000
+        },
+        {
+          "target": "ROUTER",
+          "cmd": "ride_start"
+        },
+        {
+          "wait": 29000,
+          "note": "Station A. Same train, same tunnel ahead, but now all five rescue tools are switched on."
+        },
+        {
+          "wait": 9000
+        },
+        {
+          "wait": 21000
+        },
+        {
+          "wait": 25000,
+          "note": "Out of the tunnel. The call and the video still lost the tunnel, no tool can bring back sound nobody sent. The chat caught up at once."
+        },
         {
           "wait": 6000
         }

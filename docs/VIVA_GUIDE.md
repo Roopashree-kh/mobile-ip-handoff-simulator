@@ -18,6 +18,15 @@ Start with `start.bat`, open http://localhost:5173 and press Reset once. Set the
 
 If something goes wrong, press Reset. It restores the topology defaults and sends the MN home.
 
+## Metro ride demo (three minutes, after the ten-minute script)
+
+| Time | Who | What to do | What to point at |
+|---|---|---|---|
+| 0:00 to 0:45 | Member 3 | In Story mode open the Metro ride tab. Leave every rescue tool off and press Start the ride. | The train moving along the route, the signal bars and the network name above it. Near each cell edge the phone flips between two networks and the narrator says so. |
+| 0:45 to 1:30 | Member 1 | Let the train enter the tunnel. | The bars empty, the call goes silent, the video freezes, the chat says Sending. When the train comes out the narrator reports how long each took to come back. Chat is the only one that loses nothing. |
+| 1:30 to 2:15 | Member 2 | Switch to Expert mode and open Quality. | The compliance table with the source of every target, the delay, jitter and MOS charts with the handoffs as dashed lines and the tunnel as a grey band, and the signal chart with the usable threshold at -100 dBm. |
+| 2:15 to 3:00 | Member 3 | Press Compare: off then on in the Quality drawer. This takes 3.5 minutes, so start it before the demo and show the finished result. | The side by side table: handoffs, voice interruptions, video freeze time, chat delivery time, time to recover and the Good, Fair or Poor verdicts. Say plainly that the tunnel itself cannot be rescued for voice and video. |
+
 ## Likely viva questions
 
 1. **What problem does Mobile IP solve?** An Internet Protocol (IP) address names a location as well as a host. When a host moves to another network its address no longer routes to it, and changing the address breaks every open connection. Mobile IP keeps a permanent home address for identification and adds a temporary care-of address for routing, with the home agent joining the two.
@@ -69,3 +78,23 @@ If something goes wrong, press Reset. It restores the topology defaults and send
 24. **What do simultaneous bindings give you?** With the S flag the HA keeps several care-of addresses and sends a copy to each. That helps when the mobile node is at the edge of two cells and is unsure which one it will stay in, at the cost of duplicate traffic.
 
 25. **What did you simplify, and why?** The links are emulated over localhost UDP because raw sockets need privileges on Windows. ARP is real packets on a simulated medium. Keys are static. The smooth handoff Binding Update uses a static key rather than one set up during registration. Everything is listed in `docs/PROTOCOL_NOTES.md`, and the IPv4 datagrams themselves are byte accurate, which is why the pcap opens in Wireshark.
+
+26. **What does the jitter number mean and how do you measure it?** Jitter is not delay. It is the smoothed mean deviation of the packet spacing, RFC 3550 section 6.4.1: for each pair of consecutive packets D is the change in one-way delay, and J = J + (|D| - J) / 16. A steady 80 ms path has near zero jitter. A path that swings between 60 and 120 ms has high jitter. ITU-T Y.1541 allows 50 ms for classes 0 and 1. Strictly Y.1541 defines the delay variation as a quantile of delay minus the minimum delay, so comparing RFC 3550 jitter with its 50 ms is an approximation, and PROTOCOL_NOTES says so.
+
+27. **What are the Y.1541 classes and which do voice and video get?** Y.1541 sets network performance objectives per class. Class 0 is 100 ms mean delay, 50 ms delay variation and loss 1e-3. Class 1 is the same with 400 ms. Voice gets class 0 and video class 1. ITU-T G.1010 is the end-user view and gives the limits that decide Poor, for example under 3 per cent loss for voice and under 1 per cent for video. A flow that misses a Y.1541 objective but stays inside the G.1010 limit is Fair.
+
+28. **How do you turn network numbers into a MOS?** With the E-model of ITU-T G.107. R = 93.2 - Id - Ie_eff. Id grows once the one-way delay is above 100 ms. Ie_eff comes from the loss: Ie + (95 - Ie) x Ppl / (Ppl / BurstR + Bpl), with the G.711 values Ie 0 and Bpl 25.1. Then MOS = 1 + 0.035 R + R (R - 60) (100 - R) x 7e-6. R of 80 is MOS 4.03 and R of 60 is MOS 3.10. We take the echo terms as zero and hold BurstR at 1 or above, and we say so in the notes.
+
+29. **Why does a late packet count as lost?** A player needs each packet at a fixed moment. A packet that arrives after it has nothing to play. The playout buffer trades delay for loss: a bigger buffer turns fewer packets into late loss but adds delay to every word. Ours is adaptive. It follows the mean delay plus four times the running deviation, after Ramjee, Kurose, Towsley and Schulzrinne, so it grows with the jitter.
+
+30. **Why does the E-model use the playout delay and not the network delay?** The listener hears what comes out of the buffer. Mouth-to-ear delay is the network delay, plus the buffer, plus the codec packetisation, and that total is what ITU-T G.114 judges: transparent under 150 ms, not to exceed 400 ms for planning.
+
+31. **Why does the baseline phone ping-pong, and how does hysteresis stop it?** Where two cells cross, their signals are within a few dB and the fade makes each one briefly stronger. A phone that switches to the strongest network every reading flips back and forth, and each flip costs a registration and a gap in the media. Smart handoff averages the readings, switches only when the current signal is below -85 dBm and another is 5 dB stronger for 600 ms, and then stays for at least 4 s. In our ride the baseline made 15 to 19 handoffs and Smart handoff made 3, one per cell.
+
+32. **What does the S flag give and what does it cost?** RFC 3344 section 3.6.1.2: with S set the home agent keeps the old binding and tunnels a separate copy of every datagram to each care-of address, and the mobile node receives both. While two networks overlap nothing is lost when the first fades. The cost is duplicate traffic, and the old binding lingers until it expires. We drop the duplicate by sequence number, and the foreign agent notice stops the copies to a care-of address the phone has left.
+
+33. **Explain hold and forward. Is it in RFC 3344?** No, it is our own extension. The foreign agent sees a link-layer failure, which is the missing acknowledgement, and tells the home agent the visitor is unreachable. The home agent keeps the packets instead of tunneling into the void, and releases them when the foreign agent hears the phone again or the phone re-registers. The policy is per type: call audio older than 150 ms is useless and dropped, video older than 2 s is dropped, chat is kept. The buffer holds 600 packets and drops the least valuable first. The counters for what was dropped are in the home agent state.
+
+34. **What can no feature fix in the tunnel?** Sound and picture that were produced while the phone had no signal cannot arrive in time. For 20 s the call is silent and the video is frozen with every feature on. What changes is around the tunnel: fewer handoffs, no ping-pong, quicker recovery, chat messages delivered at once instead of at the next retransmission, and a smaller picture sent while the signal is weak. The result table shows exactly that.
+
+35. **Why do voice, video and chat get different verdicts for the same outage?** They need different things. Voice needs a steady stream and low delay, so a gap ruins the call. Video tolerates delay but freezes when frames or their reference key frame are lost, so we count freezes. Chat tolerates seconds of delay but must not lose a message, so we measure delivery time and the retransmissions. G.1010 has no instant messaging row, so we used the nearest one, e-mail server access, with 2 s preferred and 4 s acceptable, and we marked that in the targets file.
