@@ -90,10 +90,19 @@ function resetAll() {
   ingest({ ts: Date.now(), node: 'GATEWAY', kind: 'config', summary: 'simulation reset to topology defaults' });
 }
 
+function resetKeep() {
+  const keep = { ...features };
+  resetAll();
+  setFeatures(keep);
+}
+
 const runner = new ScenarioRunner({
   command: sendCommand,
   set: setFeatures,
   reset: resetAll,
+  resetKeep,
+  capture: (label) => sendCommand('MN', 'qos_summary', { label }),
+  clearRuns: () => { runs = {}; queue({ type: 'runs_cleared' }); },
   phase: (label) => {
     metrics.setPhase(label);
     queue({ type: 'phase', phase: label });

@@ -3,8 +3,9 @@
 // to the mobile node.
 import React, { useEffect, useState } from 'react';
 import { useStore } from '../lib/store.js';
-import { command, setFeature } from '../lib/ws.js';
+import { command, send, setFeature } from '../lib/ws.js';
 import { Section, Switch } from './ui.jsx';
+import RescueSwitches from './RescueSwitches.jsx';
 
 const MOVES = [['home', 'Home', 'HA'], ['fa1', 'Campus Wi-Fi', 'FA-1'], ['fa2', 'Metro LTE', 'FA-2'], ['fa3', 'Airport', 'FA-3']];
 
@@ -86,6 +87,27 @@ export default function ControlPanel() {
               <Switch small key={key} checked={!!f[key]} onChange={(v) => setFeature({ [key]: v })} label={label} hint={hint} />
             ))}
           </div>
+        </Section>
+
+        <Section title="Metro ride" right={router?.coverage?.on ? <span className="text-acc">{Math.round(router.coverage.pos)} m</span> : null}>
+          <Switch small checked={!!f.coverage} onChange={(v) => setFeature({ coverage: v })} label="Radio coverage"
+            hint="Signal strength along a route decides what the phone can reach. Needed for the ride." />
+          <div className="grid grid-cols-3 gap-2 mt-3">
+            <button className={`btn ${router?.coverage?.riding ? 'btn-active' : ''}`} disabled={!f.coverage}
+              onClick={() => command('ROUTER', 'ride_start')}>Ride</button>
+            <button className="btn" onClick={() => command('ROUTER', 'ride_stop')}>Pause</button>
+            <button className="btn" onClick={() => command('ROUTER', 'ride_reset')}>Start</button>
+          </div>
+          <div className="grid gap-2 mt-2">
+            <button className="btn" onClick={() => send({ type: 'scenario', id: '8_metro_ride' })}
+              title="Home, Campus, Station A, a 20 second tunnel, Station B, Airport. About 105 seconds.">Run the ride with these switches</button>
+            <button className="btn" onClick={() => send({ type: 'scenario', id: '9_metro_compare' })}
+              title="Two rides, features off then all on. About 3.5 minutes. Results appear in the Quality drawer.">Compare: all off, then all on</button>
+          </div>
+        </Section>
+
+        <Section title="Rescue features">
+          <RescueSwitches />
         </Section>
 
         <Section title="Tunnel and detection">

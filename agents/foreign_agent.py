@@ -66,6 +66,28 @@ class ForeignAgent(MobilityAgent):
             return True
         return False
 
+    # ---- link-layer reachability and the notices to the home agent (our extension) ----------
+    def on_frame(self, kind, src_id, payload):
+        if kind in (link.LINK_UNICAST, link.LINK_BROADCAST):
+            for v in self.visitors.values():
+                if v["node_id"] == src_id and not v["reachable"]:
+                    v["reachable"] = True
+                    self.tel.emit("l2", "%s hears %s again, it is reachable on this link" % (self.name, v["node"]),
+                                  home=v["home"])
+                    self.notice(v, m.DeliveryNotice.REACHABLE)
+        super().on_frame(kind, src_id, payload)
+
+    def notice(self, v, state):
+        """Tell the home agent a visitor became unreachable or reachable. Only when a feature that
+        uses it is on. Not part of RFC 3344, see docs/PROTOCOL_NOTES.md."""
+        if not (self.features.get("hold_forward") or self.features.get("auto_simultaneous")) or not self.fh_sa:
+            return
+        raw = m.append_auth(m.DeliveryNotice(state, v["home"], self.ip).pack(), m.EXT_FH_AUTH, *self.fh_sa)
+        self.send_mip(v["ha"], raw)
+        self.tel.emit("l2", "%s tells the HA that %s is %s" % (
+            self.name, v["home"], "unreachable" if state == m.DeliveryNotice.UNREACHABLE else "reachable again"),
+            home=v["home"], state=state, rfc="simulator extension, not RFC 3344")
+
     # ---- registration relay ------------------------------------------------------------
     def on_mip(self, kind, src_id, h, sport, dport, data):
         if not data:
@@ -326,6 +348,7 @@ class ForeignAgent(MobilityAgent):
             v["reachable"] = False
             self.tel.emit("l2", "%s: link-layer delivery to %s failed, the mobile node has left the cell" % (
                 self.name, v["node"]), home=v["home"])
+            self.notice(v, m.DeliveryNotice.UNREACHABLE)
         if h.proto != ipv4.PROTO_UDP or not self._is_reg(datagram):
             self.undeliverable(h.dst, datagram, None, "mobile node left this link")
 

@@ -10,6 +10,9 @@
   },
   "window_s": 5,
   "stall_poor_ms": 1000,
+  "settle_fraction": 0.6,
+  "idle_after_ms": 8000,
+  "story": { "video_stall_ms": 300, "call_silent_ms": 400, "fresh_ms": 1500 },
   "emodel": {
     "ro": { "value": 93.2, "source": "ITU-T G.107 clause 7.7 Table 3 (default R)", "verified": true },
     "ie": { "value": 0, "source": "ITU-T G.113 Appendix I, G.711", "verified": true },

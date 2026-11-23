@@ -26,9 +26,13 @@ ARP = 3            # payload is an ARP packet, broadcast on the sender's link
 L2_NAK = 4         # router to sender: the unicast target was not on the link (missed 802.11 ACK)
 ATTACH = 5         # station to router: associate with the link named in the payload
 SNIFFED = 6        # router to a promiscuous station: copy of a frame seen on its link
+ATTACH_EXTRA = 7   # station to router: also stay associated with this link (overlap, S flag)
+DETACH_EXTRA = 8   # station to router: leave an extra link
+SIGNAL = 9         # router to the mobile node: radio measurements (dBm per network), not a radio frame
 
 KIND_NAMES = {ROUTED: "routed", LINK_UNICAST: "unicast", LINK_BROADCAST: "broadcast",
-              ARP: "arp", L2_NAK: "l2-nak", ATTACH: "attach", SNIFFED: "sniffed"}
+              ARP: "arp", L2_NAK: "l2-nak", ATTACH: "attach", SNIFFED: "sniffed",
+              ATTACH_EXTRA: "attach-extra", DETACH_EXTRA: "detach-extra", SIGNAL: "signal"}
 
 
 def frame(kind, src_id, payload: bytes, dst_id=0) -> bytes:

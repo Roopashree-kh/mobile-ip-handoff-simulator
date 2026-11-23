@@ -43,11 +43,16 @@ class QosManager:
         self.cur = None
         self.last = None
         self.fb_seq = 0
-        self.handoff_marks = []
+        self.handoffs = 0
         self.run_start = None
 
     def ports(self):
         return set(self.by_port)
+
+    def note_handoff(self):
+        """Count handoffs that happen while a run is going, not the attach that Reset does."""
+        if self.run_start is not None:
+            self.handoffs += 1
 
     # ---- packets -------------------------------------------------------------------------
     def on_packet(self, dport, h, data, link):
@@ -145,6 +150,11 @@ class QosManager:
                      "voice": v, "video": vi, "text": tx}
         if not (v["active"] or vi["active"] or tx["active"]):
             return
+        # flows that have been silent for a long time outside an outage have simply been stopped:
+        # keep the timeline and the CSV free of the tail of 100 per cent loss that would follow
+        silent = min((f["stall_ms"] for f in (v, vi) if f["active"]), default=0)
+        if silent > self.tc.get("idle_after_ms", 8000) and not self.blackout:
+            return
         hid = self.mn.handoff["id"] if self.mn.handoff else 0
         vw, iw = v["window"], vi["window"]
         self.mn.tel.emit("qos_point", "qos", t=round(now, 1), link=self.mn.link, signal=self.signal, blackout=self.blackout,
@@ -207,6 +217,7 @@ class QosManager:
                       "longest_interruption_ms": round(max((i["ms"] for i in ints), default=0), 1),
                       "verdict": ev["voice"]["level"], "reason": ev["voice"]["reason"]},
             "video": {"frames_total": vi["frames_total"], "frames_lost": vi["frames_lost"],
+                      "frames_lost_pct": _r(100.0 * vi["frames_lost"] / vi["frames_total"], 1) if vi["frames_total"] else None,
                       "freezes": vi["freezes"], "freeze_s": round(vi["freeze_ms"] / 1000.0, 1),
                       "longest_freeze_s": round(vi["longest_freeze_ms"] / 1000.0, 1),
                       "loss_pct": _r(ic["loss_pct"], 2), "late": ic["late"],
@@ -219,7 +230,7 @@ class QosManager:
                      "retx_delivered": tx["retx_delivered"],
                      "verdict": ev["text"]["level"], "reason": ev["text"]["reason"]},
             "outages": outs, "recover_s": round(max(rec_all) / 1000.0, 1) if rec_all else None,
-            "handoffs": self.mn.handoff_seq,
+            "handoffs": self.handoffs,
             "checks": {k: v2["checks"] for k, v2 in ev.items()},
         }
 

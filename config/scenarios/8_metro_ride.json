@@ -1,0 +1,55 @@
+{
+  "title": "Metro ride (current switches)",
+  "description": "Home, Campus, Station A, a 20 second tunnel, Station B and the Airport, with voice, video and chat running. Uses the switches as you have set them. Takes about 105 seconds. The result is added to the Quality drawer.",
+  "steps": [
+    {
+      "reset_keep": true
+    },
+    {
+      "wait": 1500
+    },
+    {
+      "set": {
+        "coverage": true
+      }
+    },
+    {
+      "target": "ROUTER",
+      "cmd": "ride_reset"
+    },
+    {
+      "wait": 1500
+    },
+    {
+      "target": "CN",
+      "cmd": "flows_start"
+    },
+    {
+      "wait": 6000
+    },
+    {
+      "target": "ROUTER",
+      "cmd": "ride_start"
+    },
+    {
+      "wait": 88000
+    },
+    {
+      "wait": 8000
+    },
+    {
+      "capture": "current"
+    },
+    {
+      "wait": 800
+    },
+    {
+      "target": "CN",
+      "cmd": "flows_stop"
+    },
+    {
+      "target": "ROUTER",
+      "cmd": "ride_stop"
+    }
+  ]
+}

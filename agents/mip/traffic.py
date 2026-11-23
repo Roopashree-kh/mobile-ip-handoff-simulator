@@ -107,6 +107,9 @@ class VideoSource:
 
     def start(self):
         self.last_fb = None
+        self.level = int(self.cfg.get("start_level", 0))
+        self.last_change = 0.0
+        self.good_since = None
         self.ticker.start(lambda: 1.0 / self.levels[self.level]["fps"])
         self.watch.start(lambda: 0.25)
 
@@ -135,8 +138,10 @@ class VideoSource:
     # ---- adaptive sender (feature adaptive_sender) -------------------------------------
     def on_feedback(self, loss_pct, signal_dbm, now):
         """The mobile node reports loss and signal. Step down fast, step up slowly."""
-        self.last_fb = now
         a = self.acfg
+        if not self.ticker.running:
+            return
+        self.last_fb = now
         if not self.cn.features.get("adaptive_sender"):
             return
         bad = loss_pct >= a["down_loss_pct"] or (signal_dbm is not None and signal_dbm < a["weak_signal_dbm"])
@@ -161,7 +166,7 @@ class VideoSource:
             return
         now = clock.mono()
         if self.last_fb is not None and now - self.last_fb > self.acfg["feedback_timeout_ms"] / 1000.0 \
-                and self.level < len(self.levels) - 1 and now - self.last_change >= 1.0:
+                and self.level < len(self.levels) - 1 and now - self.last_change >= self.acfg["down_dwell_ms"] / 1000.0:
             self._move(+1, now, "no feedback for %.1f s" % (now - self.last_fb))
             self.good_since = None
 

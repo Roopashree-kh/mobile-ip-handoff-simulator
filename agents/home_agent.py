@@ -35,6 +35,10 @@ class HomeAgent(MobilityAgent):
         self.fa_by_ip = {topo.node(fa)["ip"]: fa for fa in sec["fa_ha"]}
         self.ro_sa = self.sa(sec["ha_cn"])
         self.mn_cfg = topo.node("MN")
+        # hold and forward (our extension, config/resilience.json)
+        self.hf = topo.extra("resilience.json")["hold_forward"]
+        fl = topo.extra("traffic.json")["flows"]
+        self.kind_by_port = {fl[k]["mn_port"]: k for k in ("voice", "video", "text")}
         self.reset_state()
 
     def reset_state(self):
@@ -47,10 +51,15 @@ class HomeAgent(MobilityAgent):
         self.proxy = set()
         self.counters = {"tunneled": 0, "reverse": 0, "dropped": 0, "accepted": 0, "denied": 0, "bu_sent": 0}
         self.last_reg = None
+        self.dead = {}             # care-of address -> {"since", "why"}: the foreign agent cannot reach the node
+        self.hold = {}             # home address -> list of {"t", "dg", "kind"} waiting for the node
+        self.hstats = {"held": 0, "released": 0, "peak": 0, "episodes": 0, "pruned_copies": 0,
+                       "aged": {}, "overflow": {}, "released_by": {}}
 
     def start(self):
         super().start()
         self.every(lambda: 0.25, self.expire_bindings)
+        self.every(lambda: 0.1, self.age_hold)
 
     # ---- registration ---------------------------------------------------------------
     def on_mip(self, kind, src_id, h, sport, dport, data):
@@ -75,6 +84,8 @@ class HomeAgent(MobilityAgent):
             self.tel.emit("ro", "Binding Request from %s for %s" % (h.src, msg.home_addr),
                           rfc="Route Optimization draft, Binding Request")
             self.send_binding_update(h.src, msg.home_addr, force=True)
+        elif isinstance(msg, m.DeliveryNotice):
+            self.on_notice(h, msg, data)
         elif isinstance(msg, m.BindingAck):
             self.tel.emit("ro", "Binding Acknowledge from %s for %s%s" % (
                 h.src, msg.home_addr, " (negative)" if msg.negative else ""))
@@ -89,7 +100,9 @@ class HomeAgent(MobilityAgent):
         if m.accepted(code):
             if dereg:
                 self.bindings.remove(req.home_addr, None if req.coa == req.home_addr else req.coa)
+                self.dead.pop(req.coa, None)
                 if req.coa == req.home_addr:
+                    self.hold.pop(req.home_addr, None)
                     self.mn_returned_home(req.home_addr)
             else:
                 granted = min(req.lifetime, self.ncfg["max_lifetime"])
@@ -101,6 +114,9 @@ class HomeAgent(MobilityAgent):
                     code, granted, why = 135, 0, "already %d bindings" % self.bindings.max_bindings
                 else:
                     self.start_proxy(req.home_addr)
+                    self.dead.pop(req.coa, None)
+                    if self.hold.get(req.home_addr):
+                        self.call_later(0.0, self.release, req.home_addr, "re-registration")
                     if self.features.get("route_optimization"):
                         for cn in sorted(self.correspondents.get(req.home_addr, ())):
                             self.send_binding_update(cn, req.home_addr, force=True)
@@ -144,8 +160,122 @@ class HomeAgent(MobilityAgent):
 
     def expire_bindings(self):
         for b in self.bindings.expire(self.now()):
+            self.dead.pop(b.coa, None)
             self.tel.emit("binding", "binding %s -> %s expired (lifetime %d s ran out)" % (b.home, b.coa, b.lifetime),
                           home=b.home, coa=b.coa, rfc="RFC 3344 section 3.8.3")
+        if self.features.get("hold_forward"):
+            # a binding whose renewal is overdue by suspect_missed_renewal_s is treated as unreachable
+            now = self.now()
+            frac = self.topo.mip["renew_at_fraction"]
+            for lst in list(self.bindings.table.values()):
+                for b in lst:
+                    if b.coa not in self.dead and now - b.granted_at > b.lifetime * frac + self.hf["suspect_missed_renewal_s"]:
+                        self.mark_dead(b.coa, "its renewal is overdue")
+
+    # ---- hold and forward (our extension, NOT RFC 3344) ----------------------------------------
+    def on_notice(self, h, msg, raw):
+        fh = self.fh_sas.get(h.src)
+        ext = m.find_ext(msg.extensions, m.EXT_FH_AUTH)
+        if fh is None or ext is None or m.auth_ext_spi(ext) != fh[0] or not m.verify_auth(raw, ext, fh[1]):
+            self.tel.emit("registration", "HA ignores a Delivery Notice from %s: authentication failed" % h.src)
+            return
+        if msg.state == m.DeliveryNotice.UNREACHABLE:
+            self.mark_dead(msg.coa, "%s reported a link-layer failure" % self.fa_by_ip.get(h.src, h.src))
+        else:
+            if self.dead.pop(msg.coa, None) is not None:
+                self.tel.emit("hold", "HA: care-of address %s is reachable again" % msg.coa, coa=msg.coa)
+            self.release(msg.home_addr, "foreign agent heard the node again")
+
+    def mark_dead(self, coa, why):
+        if coa in self.dead:
+            return
+        self.dead[coa] = {"since": self.now(), "why": why}
+        self.tel.emit("hold", "HA: care-of address %s is unreachable (%s)%s" % (
+            coa, why, ", holding its traffic" if self.features.get("hold_forward") else ""), coa=coa,
+            learn="The home agent stops tunneling to a care-of address that the foreign agent cannot reach. With hold "
+                  "and forward on, it keeps the packets instead and hands them over when the node is back. This is our "
+                  "own extension, RFC 3344 has no such step.")
+
+    def classify(self, datagram):
+        try:
+            _, body = ipv4.parse_ipv4(datagram)
+            _, dport, _, _ = ipv4.parse_udp(body)
+        except ipv4.PacketError:
+            return "other"
+        return self.kind_by_port.get(dport, "other")
+
+    def hold_packet(self, home, datagram):
+        q = self.hold.setdefault(home, [])
+        if not q:
+            self.hstats["episodes"] += 1
+            self.tel.emit("hold", "HA holds datagrams for %s until the node can be reached again" % home, home=home)
+        kind = self.classify(datagram)
+        if len(q) >= self.hf["buffer_packets"]:
+            # make room by dropping the oldest packet of the least valuable type: voice, other, video, chat
+            for k in ("voice", "other", "video", "text"):
+                i = next((i for i, x in enumerate(q) if x["kind"] == k), None)
+                if i is not None:
+                    gone = q.pop(i)["kind"]
+                    self.hstats["overflow"][gone] = self.hstats["overflow"].get(gone, 0) + 1
+                    break
+        q.append({"t": self.now(), "dg": datagram, "kind": kind})
+        self.hstats["held"] += 1
+        self.hstats["peak"] = max(self.hstats["peak"], sum(len(x) for x in self.hold.values()))
+
+    def max_age(self, kind):
+        return self.hf["max_age_ms"].get(kind, self.hf["max_age_ms"].get("other"))
+
+    def age_hold(self):
+        now = self.now()
+        for home, q in list(self.hold.items()):
+            keep = []
+            for x in q:
+                lim = self.max_age(x["kind"])
+                if lim is not None and (now - x["t"]) * 1000.0 > lim:
+                    self.hstats["aged"][x["kind"]] = self.hstats["aged"].get(x["kind"], 0) + 1
+                else:
+                    keep.append(x)
+            if keep:
+                self.hold[home] = keep
+            else:
+                del self.hold[home]
+
+    def release(self, home, why):
+        q = self.hold.pop(home, None)
+        if not q:
+            return
+        now = self.now()
+        bl = [b for b in self.bindings.lookup(home, now) if b.coa not in self.dead]
+        if not bl:
+            self.hold[home] = q
+            return
+        sent = {}
+        delay = 0.0
+        for x in q:
+            lim = self.max_age(x["kind"])
+            if lim is not None and (now - x["t"]) * 1000.0 > lim:
+                self.hstats["aged"][x["kind"]] = self.hstats["aged"].get(x["kind"], 0) + 1
+                continue
+            self.call_later(delay, self.tunnel_out, bl[-1:], x["dg"])
+            delay += self.hf["release_interval_ms"] / 1000.0
+            sent[x["kind"]] = sent.get(x["kind"], 0) + 1
+        n = sum(sent.values())
+        self.hstats["released"] += n
+        for k, v in sent.items():
+            self.hstats["released_by"][k] = self.hstats["released_by"].get(k, 0) + v
+        self.tel.emit("hold", "HA releases %d held datagrams for %s (%s): %s" % (
+            n, home, why, ", ".join("%s %d" % (k, v) for k, v in sorted(sent.items())) or "none left"),
+            released=n, by=sent, why=why)
+
+    def tunnel_out(self, bl, datagram):
+        for b in bl:
+            try:
+                out = encap.encapsulate(b.encap, datagram, self.ip, b.coa, max_nesting=self.topo.mip["max_tunnel_nesting"])
+            except (encap.TunnelError, ipv4.PacketError):
+                self.counters["dropped"] += 1
+                continue
+            self.counters["tunneled"] += 1
+            self.send_routed(out)
 
     # ---- data plane ---------------------------------------------------------------------
     def on_datagram(self, kind, src_id, h, datagram):
@@ -158,8 +288,17 @@ class HomeAgent(MobilityAgent):
             self.counters["dropped"] += 1
             self.tel.emit("drop", "HA has no binding for %s, datagram from %s discarded" % (h.dst, h.src))
             return
-        if not self.features.get("simultaneous_bindings") and len(bl) > 1:
+        sim = self.features.get("simultaneous_bindings") or self.features.get("auto_simultaneous")
+        if not sim and len(bl) > 1:
             bl = bl[-1:]
+        hold_on = self.features.get("hold_forward")
+        if hold_on or self.features.get("auto_simultaneous"):
+            live = [b for b in bl if b.coa not in self.dead]
+            if live:
+                self.hstats["pruned_copies"] += len(bl) - len(live)
+                bl = live
+            elif hold_on:
+                return self.hold_packet(h.dst, datagram)
         for b in bl:
             try:
                 out = encap.encapsulate(b.encap, datagram, self.ip, b.coa,
@@ -253,7 +392,9 @@ class HomeAgent(MobilityAgent):
         return {"ip": self.ip, "bindings": self.bindings.snapshot(self.now()), "max_lifetime": self.ncfg["max_lifetime"],
                 "replay": self.replay.mode, "seq": self.adv_seq, "proxy_arp": sorted(self.proxy),
                 "correspondents": {k: sorted(v) for k, v in self.correspondents.items()},
-                "counters": self.counters, "last_reg": self.last_reg}
+                "counters": self.counters, "last_reg": self.last_reg,
+                "hold": {"on": bool(self.features.get("hold_forward")), "held_now": sum(len(q) for q in self.hold.values()),
+                         "dead": sorted(self.dead), **self.hstats}}
 
 
 def main():

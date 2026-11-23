@@ -25,7 +25,7 @@ const PLAIN = {
 const RANK = { idle: 0, good: 1, fair: 2, poor: 3 };
 
 /** Worst of voice and video. Chat only counts when it is poor. Returns { level, reason, flow }. */
-export function storyQuality(q) {
+export function storyQuality(q, stallPoorMs = 1000) {
   if (!q) return { level: 'idle', reason: 'The video and call have not started yet.', flow: null };
   let worst = { level: 'idle', flow: null, v: null };
   for (const k of ['voice', 'video', 'text']) {
@@ -36,7 +36,7 @@ export function storyQuality(q) {
   }
   if (worst.level === 'idle') return { level: 'idle', reason: 'The video and call have not started yet.', flow: null };
   if (worst.level === 'good') return { level: 'good', reason: 'The video, the call and the chat are all arriving cleanly.', flow: null };
-  const stall = q[worst.flow]?.stall_ms >= 1000;
+  const stall = q[worst.flow]?.stall_ms >= stallPoorMs;
   const bad = worst.v.checks.find((c) => c.status === 'hard') || worst.v.checks.find((c) => c.status === 'soft');
   const what = { voice: 'The call', video: 'The video', text: 'The chat' }[worst.flow];
   const why = stall ? 'Nothing is arriving at the moment.' : (PLAIN[bad?.key] || 'The connection is struggling.');
@@ -45,14 +45,15 @@ export function storyQuality(q) {
 
 export default function QualityBadge() {
   const q = useStore((s) => s.states.MN?.qos);
-  const { level, reason } = storyQuality(q);
+  const stallPoor = useStore((s) => s.config?.qos_targets?.stall_poor_ms);
+  const { level, reason } = storyQuality(q, stallPoor || 1000);
   const w = WORDS[level];
   return (
-    <div className={`rounded-[6px] border px-3 py-2 flex items-center gap-3 ${w.cls}`} role="status" aria-live="polite">
+    <div className={`rounded-[6px] border px-3 py-1.5 flex items-center gap-3 ${w.cls}`} role="status" aria-live="polite">
       <span className={`w-3 h-3 rounded-full shrink-0 ${w.dot}`} />
       <div className="min-w-0">
-        <div className="text-[18px] leading-6 font-semibold">{w.word}</div>
-        <div className="text-[14px] leading-5 text-noc-ink">{reason}</div>
+        <div className="text-[17px] leading-6 font-semibold">{w.word}</div>
+        <div className="text-[13.5px] leading-[18px] text-noc-ink">{reason}</div>
       </div>
     </div>
   );

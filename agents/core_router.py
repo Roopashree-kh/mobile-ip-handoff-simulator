@@ -18,14 +18,15 @@ the raw IPv4 bytes, which the gateway turns into the Packet Inspector and the .p
 """
 import argparse
 import ipaddress
+import json
 import os
 import random
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
+from mip import clock, decode, ipv4, link, radiomodel  # noqa: E402
 from mip import config as cfgmod  # noqa: E402
-from mip import decode, ipv4, link  # noqa: E402
 from mip import messages as m  # noqa: E402
 from mip.node import Node  # noqa: E402
 
@@ -40,6 +41,8 @@ class CoreRouter(Node):
         self.sample_n = int(tr.get("inspector_sample_every", 1))
         self.sampled = {tr["flows"][k]["flow_id"] for k in ("voice", "video")}
         self.sample_cnt = {}
+        self.cov = topo.extra("coverage.json")
+        self.radio = radiomodel.RadioModel(self.cov)
         self.reset_state()
 
     def reset_state(self):
@@ -63,6 +66,68 @@ class CoreRouter(Node):
         mn = t.node("MN")
         self.arp[t.link_of_ip(mn["home_address"])][mn["home_address"]] = "MN"
         self.counters = {"forwarded": 0, "dropped": 0, "by_reason": {}}
+        self.extra = {}            # station -> links it is also associated with (overlap, S flag)
+        self.pos = 0.0             # position of the mobile node along the route, metres
+        self.riding = False
+        self.speed = float(self.cov["speed_mps"])
+        self.sig = self.radio.signals(0.0)
+        self.dead = False
+        self.last_tick = None
+        self.last_rep = 0.0
+
+    def start(self):
+        self.every(lambda: self.cov["tick_ms"] / 1000.0, self.cov_tick)
+
+    # ---- radio coverage (config/coverage.json) -------------------------------------------
+    def cov_on(self):
+        return bool(self.features.get("coverage"))
+
+    def rf_ok(self, node, ln):
+        """False when the mobile node has no usable signal on this link: the router drops the frame."""
+        if node != "MN" or not self.cov_on() or ln is None:
+            return True
+        return self.sig.get(ln, -200.0) >= self.radio.usable
+
+    def nosig(self, ln):
+        return "no signal: the mobile node has %.0f dBm on %s, below the usable %d dBm" % (
+            self.sig.get(ln, -200.0), self.links[ln]["label"] if ln in self.links else "?", self.radio.usable)
+
+    def on_link(self, node, ln):
+        return self.attach.get(node) == ln or ln in self.extra.get(node, ())
+
+    def common_link(self, a, b):
+        for ln in [self.attach.get(a)] + sorted(self.extra.get(a, ())):
+            if ln and self.on_link(b, ln):
+                return ln
+        return None
+
+    def cov_tick(self):
+        now = clock.mono()
+        dt = 0.0 if self.last_tick is None else now - self.last_tick
+        self.last_tick = now
+        if self.riding and self.cov_on():
+            self.pos = min(self.cov["route"]["length_m"], self.pos + self.speed * dt)
+            if self.pos >= self.cov["route"]["length_m"]:
+                self.riding = False
+                self.tel.emit("coverage_event", "The ride has reached the end of the route", state="finished", pos=self.pos)
+        self.sig = self.radio.signals(self.pos)
+        if not self.cov_on():
+            return
+        dead = max(self.sig.values()) < self.radio.usable
+        if dead != self.dead:
+            self.dead = dead
+            where = self.radio.place(self.pos)
+            self.tel.emit("coverage_event", ("No network reaches the mobile node (%s)" if dead
+                                             else "A network reaches the mobile node again (%s)") % where,
+                          state="dead_enter" if dead else "dead_exit", pos=round(self.pos, 1), place=where)
+        if now - self.last_rep >= self.cov["report_interval_ms"] / 1000.0:
+            self.last_rep = now
+            rep = {"pos": round(self.pos, 1), "sig": self.sig, "dead": self.dead, "riding": self.riding,
+                   "link": self.attach.get("MN"), "extra": sorted(self.extra.get("MN", ())),
+                   "place": self.radio.place(self.pos), "usable": self.radio.usable}
+            self.tel.emit("coverage", "coverage", **rep)
+            self._deliver("MN", link.SIGNAL, json.dumps({"pos": rep["pos"], "sig": self.sig, "dead": self.dead},
+                                                        separators=(",", ":")).encode(), 0.0)
 
     # ---- input --------------------------------------------------------------
     def _dispatch(self, tag, data, addr):
@@ -86,6 +151,19 @@ class CoreRouter(Node):
             self.handle_arp(sender, payload)
         elif kind == link.ATTACH:
             self.handle_attach(sender, payload.decode(errors="replace"))
+        elif kind == link.ATTACH_EXTRA:
+            name = payload.decode(errors="replace")
+            if name in self.links and name != self.attach.get(sender):
+                self.extra.setdefault(sender, set()).add(name)
+                self.tel.emit("l2", "%s stays associated with %s as well as %s (overlap)" % (
+                    sender, self.links[name]["label"], self.links[self.attach[sender]]["label"]),
+                    station=sender, extra=name, rfc="RFC 3344 section 3.6.1.2")
+        elif kind == link.DETACH_EXTRA:
+            name = payload.decode(errors="replace")
+            if name in self.extra.get(sender, ()):
+                self.extra[sender].discard(name)
+                self.tel.emit("l2", "%s left %s, it keeps only %s" % (sender, self.links[name]["label"],
+                              self.links[self.attach[sender]]["label"]), station=sender, extra_left=name)
 
     # ---- delay and loss model ---------------------------------------------------
     def _scale(self):
@@ -123,6 +201,8 @@ class CoreRouter(Node):
             return self.mirror(sender, None, datagram, "routed", "dropped", "malformed IPv4: %s" % e, src_link)
         if not h.checksum_ok:
             return self.mirror(sender, None, datagram, "routed", "dropped", "bad IPv4 header checksum", src_link)
+        if sender == "MN" and not self.rf_ok(sender, src_link):
+            return self.mirror(sender, None, datagram, "routed", "dropped", self.nosig(src_link), src_link)
         if self.features.get("ingress_filtering") and src_link and sender != "ROUTER":
             if ipaddress.ip_address(h.src) not in self.links[src_link]["net"]:
                 return self.mirror(sender, None, datagram, "routed", "dropped",
@@ -146,7 +226,9 @@ class CoreRouter(Node):
         if target is None:
             return self.mirror(sender, None, datagram, "routed", "dropped",
                                "no ARP entry for %s on %s" % (h.dst, self.links[dst_link]["label"]), src_link, dst_link)
-        if self.attach.get(target) != dst_link:
+        if target == "MN" and not self.rf_ok(target, dst_link):
+            return self.mirror(sender, target, datagram, "routed", "dropped", self.nosig(dst_link), src_link, dst_link)
+        if not self.on_link(target, dst_link):
             return self.mirror(sender, target, datagram, "routed", "dropped",
                                "%s is not attached to %s (stale ARP entry)" % (target, self.links[dst_link]["label"]),
                                src_link, dst_link)
@@ -171,9 +253,14 @@ class CoreRouter(Node):
 
     # ---- link-local delivery --------------------------------------------------------
     def unicast(self, sender, target, datagram):
-        ln = self.attach.get(sender)
+        ln = self.common_link(sender, target) or self.attach.get(sender)
         delay = self.links[ln]["delay_ms"] * self._scale() if ln else 0
-        if target not in self.attach or self.attach.get(target) != ln:
+        if "MN" in (sender, target) and ln and not self.rf_ok("MN", ln):
+            self.mirror(sender, target, datagram, "unicast", "dropped", self.nosig(ln), ln, ln, delay_ms=delay)
+            self._deliver(sender, link.L2_NAK, datagram, delay, src_id=self.topo.node_id(target)
+                          if target in self.topo.nodes else 0)
+            return
+        if target not in self.attach or not self.on_link(target, ln):
             self.mirror(sender, target, datagram, "unicast", "dropped",
                         "%s is not on %s (no link-layer ACK)" % (target, self.links[ln]["label"] if ln else "?"),
                         ln, ln, delay_ms=delay)
@@ -189,10 +276,11 @@ class CoreRouter(Node):
 
     def broadcast(self, sender, datagram):
         ln = self.attach.get(sender)
-        if not ln:
+        if not ln or (sender == "MN" and not self.rf_ok(sender, ln)):
             return
         delay = self.links[ln]["delay_ms"] * self._scale()
-        receivers = [n for n, l in self.attach.items() if l == ln and n != sender and n not in self.promisc]
+        receivers = [n for n in self.attach if self.on_link(n, ln) and n != sender and n not in self.promisc
+                     and (n != "MN" or self.rf_ok(n, ln))]
         self._sniff(ln, datagram, {sender}, delay, "broadcast")
         if not receivers:
             return   # nobody listening; not worth a telemetry event every second
@@ -236,6 +324,7 @@ class CoreRouter(Node):
         old = self.attach.get(sender)
         if old == link_name:
             return
+        self.extra.pop(sender, None)
         if link_name == "none":
             self.attach.pop(sender, None)
         else:
@@ -284,6 +373,21 @@ class CoreRouter(Node):
                 if k in args:
                     target[k] = float(args[k])
             self.tel.emit("config", "%s delay %.0f ms, loss %.1f%%" % (ln, target["delay_ms"], target["loss_pct"]))
+        elif cmd == "ride_start":
+            if not self.cov_on():
+                self.tel.emit("config", "ride_start ignored: switch the coverage feature on first")
+                return
+            if "speed" in args:
+                self.speed = max(1.0, float(args["speed"]))
+            self.riding = True
+            self.tel.emit("coverage_event", "The ride starts at %.0f m, %.0f m/s" % (self.pos, self.speed), state="started",
+                          pos=self.pos)
+        elif cmd == "ride_stop":
+            self.riding = False
+        elif cmd == "ride_reset":
+            self.riding = False
+            self.pos = float(args.get("pos", 0.0))
+            self.sig = self.radio.signals(self.pos)
         elif cmd == "reset":
             self.reset_state()
             self.tel.emit("config", "router reset to topology defaults")
@@ -292,6 +396,11 @@ class CoreRouter(Node):
         if "ingress_filtering" in changed:
             self.tel.emit("config", "ingress filtering %s" % ("ON" if changed["ingress_filtering"] else "OFF"),
                           rfc=RFC_INGRESS)
+        if "coverage" in changed:
+            self.tel.emit("config", "radio coverage %s" % ("ON: signal strength now decides what the mobile node can reach"
+                                                           if changed["coverage"] else "OFF"))
+            if not changed["coverage"]:
+                self.riding = False
         if "time_scale" in changed:
             self.tel.emit("config", "time scale x%s (all link delays multiplied)" % changed["time_scale"])
 
@@ -301,7 +410,10 @@ class CoreRouter(Node):
                 "backbone": self.backbone, "attach": self.attach,
                 "arp": self.arp, "counters": self.counters,
                 "ingress_filtering": bool(self.features.get("ingress_filtering")),
-                "time_scale": self._scale()}
+                "time_scale": self._scale(),
+                "coverage": {"on": self.cov_on(), "pos": round(self.pos, 1), "riding": self.riding, "dead": self.dead,
+                             "sig": self.sig, "extra": {k: sorted(v) for k, v in self.extra.items()},
+                             "dropped_no_signal": self.counters["by_reason"].get("no signal", 0)}}
 
 
 def main():

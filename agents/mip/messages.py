@@ -44,10 +44,12 @@ MSG_BINDING_WARNING = 16
 MSG_BINDING_REQUEST = 17
 MSG_BINDING_UPDATE = 18
 MSG_BINDING_ACK = 19
+MSG_DELIVERY_NOTICE = 0xE0   # our own extension, not in RFC 3344: foreign agent tells the home agent about a visitor
 
 MSG_NAMES = {MSG_REG_REQUEST: "Registration Request", MSG_REG_REPLY: "Registration Reply",
              MSG_BINDING_WARNING: "Binding Warning", MSG_BINDING_REQUEST: "Binding Request",
-             MSG_BINDING_UPDATE: "Binding Update", MSG_BINDING_ACK: "Binding Acknowledge"}
+             MSG_BINDING_UPDATE: "Binding Update", MSG_BINDING_ACK: "Binding Acknowledge",
+             MSG_DELIVERY_NOTICE: "Delivery Notice (simulator extension)"}
 
 # ---- flag bits --------------------------------------------------------------
 # Mobility Agent Advertisement extension flags (RFC 3344 section 2.1.1)
@@ -416,13 +418,36 @@ class BindingRequest:
         return cls(b2ip(h), ident)
 
 
+class DeliveryNotice:
+    """Simulator extension (docs/PROTOCOL_NOTES.md, not RFC 3344). A foreign agent that cannot reach
+    a visitor at the link layer sends UNREACHABLE to the home agent, and REACHABLE when it hears the
+    visitor again. Authenticated with the Foreign-Home extension like a relayed registration."""
+    TYPE = MSG_DELIVERY_NOTICE
+    UNREACHABLE, REACHABLE = 1, 2
+
+    def __init__(self, state, home_addr, coa, extensions=None):
+        self.state, self.home_addr, self.coa = state, home_addr, coa
+        self.extensions = extensions or []
+
+    def pack(self) -> bytes:
+        return struct.pack("!BB2x4s4s", self.TYPE, self.state, ip2b(self.home_addr), ip2b(self.coa))
+
+    @classmethod
+    def unpack(cls, data: bytes):
+        if len(data) < 12 or data[0] != cls.TYPE:
+            raise MalformedMessage("bad Delivery Notice")
+        _, st, h, c = struct.unpack("!BB2x4s4s", data[:12])
+        return cls(st, b2ip(h), b2ip(c), parse_extensions(data[12:], 12))
+
+
 def parse_mip_udp(payload: bytes):
     """Decode any UDP port 434 payload into its message object."""
     if not payload:
         raise MalformedMessage("empty Mobile IP message")
     cls = {MSG_REG_REQUEST: RegistrationRequest, MSG_REG_REPLY: RegistrationReply,
            MSG_BINDING_UPDATE: BindingUpdate, MSG_BINDING_ACK: BindingAck,
-           MSG_BINDING_WARNING: BindingWarning, MSG_BINDING_REQUEST: BindingRequest}.get(payload[0])
+           MSG_BINDING_WARNING: BindingWarning, MSG_BINDING_REQUEST: BindingRequest,
+           MSG_DELIVERY_NOTICE: DeliveryNotice}.get(payload[0])
     if cls is None:
         raise MalformedMessage("unknown Mobile IP message type %d" % payload[0])
     return cls.unpack(payload)

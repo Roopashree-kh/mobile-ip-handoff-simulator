@@ -21,7 +21,7 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from mip import auth, encap, ipv4, link, qosmgr  # noqa: E402
+from mip import auth, encap, ipv4, link, qosmgr, radio  # noqa: E402
 from mip import config as cfgmod  # noqa: E402
 from mip import messages as m  # noqa: E402
 from mip.node import Node  # noqa: E402
@@ -59,6 +59,7 @@ class MobileNode(Node):
         self.last_request = None
         self.demo = None
         self.qos = qosmgr.QosManager(self, topo)
+        self.radio = radio.Radio(self, topo)
         self.reset_stats()
 
     def reset_stats(self):
@@ -68,6 +69,7 @@ class MobileNode(Node):
         self.pings = {}
         if hasattr(self, "qos"):
             self.qos.reset()
+            self.radio.reset()
 
     # ---- lifecycle -------------------------------------------------------------------
     def start(self):
@@ -84,6 +86,7 @@ class MobileNode(Node):
             return
         prev = self.link
         self.link = link_name
+        self.radio.extra = None
         self.send_raw(link.ATTACH, link_name.encode())
         self.cancel_reg()
         if initial and link_name == self.home_link:
@@ -91,6 +94,7 @@ class MobileNode(Node):
             self.send_arp(m.gratuitous_arp(self.mac, self.home))
             return
         self.close_handoff_loss()
+        self.qos.note_handoff()
         self.handoff_seq += 1
         self.handoff = {"id": self.handoff_seq, "from": prev, "to": link_name, "t_attach": self.now(),
                         "t_detect": None, "algorithm": None, "t_reg_first": None, "seq_before": self.max_seq,
@@ -118,6 +122,8 @@ class MobileNode(Node):
     def on_frame(self, kind, src_id, payload):
         if kind == link.L2_NAK:
             return
+        if kind == link.SIGNAL:
+            return self.radio.on_signal(payload)
         try:
             h, body = ipv4.parse_ipv4(payload)
         except ipv4.PacketError:
@@ -153,6 +159,8 @@ class MobileNode(Node):
                 adv = m.AgentAdvertisement.unpack(body)
             except m.MalformedMessage:
                 return
+            if self.topo.nodes.get(self.topo.node_name(src_id), {}).get("link") != self.link:
+                return   # heard over an extra (overlap) association: not a sign that we moved
             return self.on_advertisement(src_id, h.src, adv)
         if t == ipv4.ICMP_ECHO_REPLY and len(rest) >= 4:
             ident, seq = struct.unpack("!HH", rest[:4])
@@ -269,7 +277,7 @@ class MobileNode(Node):
     def build_flags(self, a):
         f = 0
         notes = []
-        if self.features.get("simultaneous_bindings"):
+        if self.features.get("simultaneous_bindings") or (self.features.get("auto_simultaneous") and self.radio.extra):
             f |= m.REQ_S
         mode = self.encap_override or self.features.get("encapsulation", "ipip")
         if mode == "minimal":
@@ -595,6 +603,7 @@ class MobileNode(Node):
             self.tel.emit("qos_run", "QoS summary for run %s" % rec["label"], run=rec)
         elif cmd == "qos_reset":
             self.qos.reset()
+            self.radio.reset()
         elif cmd == "reset":
             self.reset_stats()
             self.handoff = None
@@ -657,6 +666,10 @@ class MobileNode(Node):
             self.encap_override = None
         if "reverse_tunneling" in changed:
             self.reverse_override = None
+        if "coverage" in changed and not changed["coverage"]:
+            self.radio.reset()
+            self.qos.blackout = False
+            self.qos.signal = None
         relevant = {"encapsulation", "reverse_tunneling", "simultaneous_bindings", "colocated_coa", "request_lifetime",
                     "replay_protection"}
         if relevant & set(changed) and self.state == REGISTERED_AWAY and self.binding:
@@ -677,7 +690,8 @@ class MobileNode(Node):
                 "pending": {"attempts": self.reg["attempts"] + 1, "coa": self.reg["coa"], "dereg": self.reg["dereg"]}
                 if self.reg else None, "stats": self.stats, "max_seq": self.max_seq,
                 "replay": self.idgen.mode, "algorithm": self.features.get("movement_detection"),
-                "colocated": self.colocated(), "prev_fa": self.prev_fa, "qos": self.qos.last}
+                "colocated": self.colocated(), "prev_fa": self.prev_fa, "qos": self.qos.last,
+                "radio": self.radio.snapshot()}
 
 
 def main():

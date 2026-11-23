@@ -6,6 +6,9 @@
 //   { "phase": "label" | null }                      tag following latency samples (side-by-side results)
 //   { "repeat": n, "steps": [...] }                  loop
 //   { "summary": true }                              emit the phase comparison table
+//   { "reset_keep": true }                           reset every agent but keep the feature switches as they are
+//   { "capture": "label" }                           ask the mobile node for its QoS run summary under that label
+//   { "clear_runs": true }                           forget the finished QoS runs
 // Any step may carry "note", which is shown on the dashboard as the scenario narration.
 //
 // A scenario may use "chapters" instead of "steps" (the Story mode tour):
@@ -91,6 +94,9 @@ class ScenarioRunner {
       if (count) this.step += 1;
       if (st.note) this.hooks.emit({ kind: 'scenario', node: 'GATEWAY', summary: st.note, scenario: this.current.id, state: 'step', step: this.step, total: this.total });
       if (st.reset) this.hooks.reset();
+      if (st.reset_keep) this.hooks.resetKeep();
+      if (st.clear_runs) this.hooks.clearRuns();
+      if (st.capture) this.hooks.capture(st.capture);
       if (st.set) this.hooks.set(st.set);
       if ('phase' in st) this.hooks.phase(st.phase);
       if (st.target && st.cmd) this.hooks.command(st.target, st.cmd, st.args || {});

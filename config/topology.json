@@ -93,6 +93,12 @@
     "replay_protection": "timestamp",
     "colocated_coa": false,
     "adv_interval_ms": 1000,
-    "time_scale": 1
+    "time_scale": 1,
+    "coverage": false,
+    "signal_handoff": false,
+    "auto_simultaneous": false,
+    "hold_forward": false,
+    "adaptive_sender": false,
+    "fast_rereg": false
   }
 }

@@ -1,0 +1,123 @@
+{
+  "title": "Metro ride, features off then on",
+  "description": "Runs the same ride twice, first with every rescue feature off and then with all five on, and puts the two results side by side in the Quality drawer. Takes about 3.5 minutes.",
+  "steps": [
+    {
+      "clear_runs": true
+    },
+    {
+      "note": "Run 1 of 2: the ride with every rescue feature off."
+    },
+    {
+      "reset": true
+    },
+    {
+      "wait": 1500
+    },
+    {
+      "set": {
+        "coverage": true,
+        "signal_handoff": false,
+        "auto_simultaneous": false,
+        "hold_forward": false,
+        "adaptive_sender": false,
+        "fast_rereg": false
+      }
+    },
+    {
+      "target": "ROUTER",
+      "cmd": "ride_reset"
+    },
+    {
+      "wait": 1500
+    },
+    {
+      "target": "CN",
+      "cmd": "flows_start"
+    },
+    {
+      "wait": 6000
+    },
+    {
+      "target": "ROUTER",
+      "cmd": "ride_start"
+    },
+    {
+      "wait": 88000
+    },
+    {
+      "wait": 8000
+    },
+    {
+      "capture": "off"
+    },
+    {
+      "wait": 800
+    },
+    {
+      "target": "CN",
+      "cmd": "flows_stop"
+    },
+    {
+      "target": "ROUTER",
+      "cmd": "ride_stop"
+    },
+    {
+      "note": "Run 2 of 2: the same ride with all five rescue features on."
+    },
+    {
+      "reset": true
+    },
+    {
+      "wait": 1500
+    },
+    {
+      "set": {
+        "coverage": true,
+        "signal_handoff": true,
+        "auto_simultaneous": true,
+        "hold_forward": true,
+        "adaptive_sender": true,
+        "fast_rereg": true
+      }
+    },
+    {
+      "target": "ROUTER",
+      "cmd": "ride_reset"
+    },
+    {
+      "wait": 1500
+    },
+    {
+      "target": "CN",
+      "cmd": "flows_start"
+    },
+    {
+      "wait": 6000
+    },
+    {
+      "target": "ROUTER",
+      "cmd": "ride_start"
+    },
+    {
+      "wait": 88000
+    },
+    {
+      "wait": 8000
+    },
+    {
+      "capture": "on"
+    },
+    {
+      "wait": 800
+    },
+    {
+      "target": "CN",
+      "cmd": "flows_stop"
+    },
+    {
+      "target": "ROUTER",
+      "cmd": "ride_stop"
+    }
+  ]
+}

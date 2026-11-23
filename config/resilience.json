@@ -1,0 +1,21 @@
+{
+  "_comment": "The five switchable features of the Metro ride. title and plain are shown in the UI. Everything the code decides with is below, nothing is hard-coded. Features a, b, d and e are the mobile node and correspondent side. Feature c is on the home agent and is our own extension, it is not RFC 3344.",
+  "features": {
+    "signal_handoff": { "tag": "our policy", "title": "Smart handoff", "plain": "Switch network only when the signal is weak and another is clearly stronger for a moment, so the phone does not flip back and forth at a cell edge.", "origin": "Our own handoff policy. Mobile IP does not say when to hand off." },
+    "auto_simultaneous": { "tag": "RFC 3344 S flag", "title": "Two networks at once", "plain": "While two networks overlap, stay on both. The home router sends every packet down both paths and the phone drops the copy it already has.", "origin": "RFC 3344 section 3.6.1.2, the S flag. When to use it is our policy." },
+    "hold_forward": { "tag": "our extension", "title": "Hold and forward", "plain": "When the phone has no signal, the home router keeps its packets and hands them over when it is back. Calls are not kept for long, video for about two seconds, chat messages are kept.", "origin": "Our own extension on the home agent. It is not in RFC 3344." },
+    "adaptive_sender": { "tag": "our extension", "title": "Adaptive video", "plain": "The video server sends a smaller picture when the phone reports losses or a weak signal, and goes back to full quality afterwards.", "origin": "Our own feedback loop over the existing reverse path." },
+    "fast_rereg": { "tag": "RFC 3344 solicit", "title": "Fast re-registration", "plain": "The moment the signal returns the phone announces itself, instead of waiting for the next beacon from the network.", "origin": "RFC 3344 section 2.4 allows a solicitation at any time. When we send it is our policy." }
+  },
+  "all_on": ["signal_handoff", "auto_simultaneous", "hold_forward", "adaptive_sender", "fast_rereg"],
+  "baseline_policy": "The baseline phone switches to whichever network is strongest right now, with no margin and no waiting time, and averages nothing.",
+  "signal_handoff": { "filter_alpha": 0.4, "switch_below_dbm": -85, "margin_db": 5, "dwell_ms": 600, "min_stay_ms": 4000 },
+  "auto_simultaneous": { "max_overlap_s": 15 },
+  "hold_forward": {
+    "buffer_packets": 600,
+    "max_age_ms": { "voice": 150, "video": 2000, "text": null, "other": 1000 },
+    "release_interval_ms": 4,
+    "notice_min_interval_ms": 400,
+    "suspect_missed_renewal_s": 2.0
+  }
+}

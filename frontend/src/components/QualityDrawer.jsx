@@ -98,7 +98,7 @@ export function useMarks(rows, t0) {
   }, [rows, t0, handoffs]);
 }
 
-export function TimeChart({ title, note, rows, t0, lines, unit, refs = [], height = 200, domainY }) {
+export function TimeChart({ title, note, rows, t0, lines, unit, refs = [], height = 200, domainY, ticks }) {
   const { hs, spans } = useMarks(rows, t0);
   return (
     <Box title={title} note={note}>
@@ -106,7 +106,7 @@ export function TimeChart({ title, note, rows, t0, lines, unit, refs = [], heigh
         <LineChart data={rows} margin={{ top: 6, right: 12, bottom: 0, left: 0 }}>
           {GRID}
           <XAxis dataKey="x" type="number" domain={['dataMin', 'dataMax']} allowDecimals={false} {...AXIS} unit=" s" />
-          <YAxis {...AXIS} unit={unit} width={unit && unit.length > 2 ? 58 : 46} domain={domainY || [0, 'auto']} />
+          <YAxis {...AXIS} unit={unit} width={unit && unit.length > 2 ? 62 : 46} domain={domainY || [0, 'auto']} ticks={ticks} allowDataOverflow />
           <Tooltip {...TIP} />
           <Legend wrapperStyle={{ fontSize: 12, color: '#5f6b7a' }} iconType="circle" iconSize={8} />
           {spans.map(([a, b], i) => <ReferenceArea key={`b${i}`} x1={a} x2={b} fill="#1f2933" fillOpacity={0.09} ifOverflow="hidden" />)}

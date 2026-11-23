@@ -28,7 +28,7 @@ const ACC = '#2457a6';
 
 // ---- illustrations, each drawn in scene coordinates ----
 
-function House() {
+export function House() {
   return (
     <g>
       <rect x="48" y="240" width="144" height="90" fill="#f3dcb5" stroke="#b98d5c" strokeWidth="2" />
@@ -47,7 +47,7 @@ function House() {
   );
 }
 
-function Campus() {
+export function Campus() {
   return (
     <g>
       <rect x="300" y="242" width="140" height="88" fill="#e3e6ee" stroke="#8d96a3" strokeWidth="2" />
@@ -60,7 +60,7 @@ function Campus() {
   );
 }
 
-function Train() {
+export function Train() {
   return (
     <g>
       <line x1="520" y1="330" x2="720" y2="330" stroke="#7b8794" strokeWidth="3" />
@@ -74,7 +74,7 @@ function Train() {
   );
 }
 
-function Airport() {
+export function Airport() {
   return (
     <g>
       <line x1="790" y1="330" x2="990" y2="330" stroke="#7b8794" strokeWidth="3" strokeDasharray="14 10" />

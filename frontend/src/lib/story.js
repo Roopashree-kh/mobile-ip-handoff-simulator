@@ -17,10 +17,12 @@ const AGENT_PLACE = { HA: 'home', 'FA-1': 'fa1', 'FA-2': 'fa2', 'FA-3': 'fa3' };
 let place = 'home';
 let wantTunnelCaption = false;
 let roExplained = false;
+let radioSwitches = [];
 const lastText = new Map();
 
 /** Forget per-run context (Reset). */
 export function resetStoryContext() {
+  radioSwitches = [];
   wantTunnelCaption = false;
   roExplained = false;
   lastText.clear();
@@ -51,6 +53,27 @@ function build(ev, state) {
   switch (ev.kind) {
     case 'scenario':
       return ev.scenario === TOUR_ID && ev.state === 'step' ? s : null;
+    case 'coverage_event':
+      if (ev.state === 'started') return 'The metro ride starts. Watch the signal bars over the train.';
+      if (ev.state === 'dead_enter') return 'The train enters the tunnel. No network can reach the phone now.';
+      if (ev.state === 'dead_exit') return 'The train comes out of the tunnel. The phone can hear a network again.';
+      if (ev.state === 'finished') return 'The train has reached the airport. The ride is over.';
+      return null;
+    case 'qos_event':
+      if (ev.type === 'outage') {
+        const r = ev.recover_ms || {};
+        const sec = (v) => (v === null || v === undefined ? 'a while' : `${(v / 1000).toFixed(1)} s`);
+        return `The tunnel cut the phone off for about ${Math.round((ev.duration_ms || 0) / 1000)} seconds. After the signal came back, the call returned in ${sec(r.voice)}, the video in ${sec(r.video)} and the chat in ${sec(r.text)}.`;
+      }
+      return null;
+    case 'hold':
+      if (s.startsWith('HA holds')) return 'The phone is out of reach, so the home router keeps its packets instead of throwing them away. Old call sound is dropped, video is kept for two seconds and chat messages are kept.';
+      if (s.startsWith('HA releases')) return 'The phone is back. The home router hands over everything it kept.';
+      return null;
+    case 'adapt':
+      return ev.direction === 'down'
+        ? 'The video server sees trouble on the way, so it sends a smaller picture.'
+        : 'The path is healthy again, so the video server goes back to the full picture.';
     case 'l2':
       if (ev.station !== 'MN' || !PLACES[ev.new]) return null;
       place = ev.new;
@@ -58,6 +81,14 @@ function build(ev, state) {
         ? "Priya is back home. Her phone just connected to her home network."
         : `Priya's phone just connected to ${PLACES[place].net}.`;
     case 'movement': {
+      if (ev.node === 'MN' && s.startsWith('radio:')) {
+        radioSwitches = radioSwitches.filter((t) => ev.ts - t < 12000).concat(ev.ts);
+        if (radioSwitches.length >= 3) return 'The phone keeps flipping between two networks at the edge of their range. Each flip costs a moment of silence.';
+        const to = s.match(/ to (.+?),/);
+        return to ? `The phone moves to ${to[1]} because its signal is stronger.` : null;
+      }
+      if (ev.node === 'MN' && s.startsWith('overlap:')) return 'For a few seconds the phone is on two networks at once. Every packet is sent both ways, so nothing is lost while it switches.';
+      if (ev.node === 'MN' && s.startsWith('signal is back')) return 'The phone does not wait for the next beacon. It announces itself the moment the signal is back.';
       if (ev.node !== 'MN' || !s.startsWith('movement detected')) return null;
       const m = s.match(/new agent (\S+)/);
       const at = PLACES[AGENT_PLACE[m && m[1]]] || p;

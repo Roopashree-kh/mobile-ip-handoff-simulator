@@ -94,7 +94,8 @@ def mos_from_r(r):
         return 1.0
     if r > 100:
         return 4.5
-    return 1 + 0.035 * r + r * (r - 60) * (100 - r) * 7e-6
+    # the polynomial dips just below 1 for R under about 7, so the result is clamped to 1 to 4.5
+    return max(1.0, min(4.5, 1 + 0.035 * r + r * (r - 60) * (100 - r) * 7e-6))
 
 
 def r_band(r, ecfg_bands):
@@ -453,6 +454,10 @@ class SeqFlow:
         m["mos"] = mos
         rep.update({"r": round(r, 1), "mos": round(mos, 2), "id": round(idd, 1), "ie_eff": round(ie_eff, 1),
                     "ta_ms": round(ta, 1), "r_label": r_band(r, self.tcfg.get("mos_bands", []))})
+        # a window that has barely filled (the first second of a run) gives a meaningless loss ratio,
+        # so it does not count towards the run statistics
+        if win["total"] < self.tcfg.get("settle_fraction", 0.6) * self.window_ms / max(1.0, self.pkt_interval):
+            return
         self.mos_n += 1
         self.mos_sum += mos
         if self.worst_mos is None or mos < self.worst_mos:
@@ -492,6 +497,15 @@ class VideoFlow(SeqFlow):
         self.frame_int = iv
         self.gap_unit = iv
         self.pkt_interval = iv / max(1.0, self.ppf)
+
+    def _restart(self):
+        """The sender started again at sequence 0: forget the frame state as well, or every new frame
+        looks older than the last frame of the previous stream and is ignored."""
+        super()._restart()
+        self.frames.clear()
+        self.next_fid = None
+        self.decoder_ok = False
+        self.last_disp = None
 
     def on_packet(self, pk, arr, link):
         info = super().on_packet(pk, arr, link)
@@ -577,7 +591,8 @@ class VideoFlow(SeqFlow):
                     "frames_total": fin + pend_frames, "freezes": self.freezes + (1 if ongoing > 0 else 0),
                     "freeze_ms": round(self.freeze_ms + ongoing, 1), "frozen_now": ongoing > 0,
                     "longest_freeze_ms": round(max(self.longest_freeze, ongoing), 1),
-                    "frame_interval_ms": round(self.frame_int, 1)})
+                    "frame_interval_ms": round(self.frame_int, 1), "frames_waiting": len(self.frames),
+                    "next_deadline_in_ms": round(min(f["deadline"] for f in self.frames.values()) - now, 1) if self.frames else None})
 
 
 class TextFlow:
@@ -603,6 +618,10 @@ class TextFlow:
 
     def on_message(self, pk, arr, link):
         mid = pk["seq"]
+        if mid == 0 and self.max_id > 5:
+            self.msgs.clear()
+            self.gaps.clear()
+            self.max_id = -1
         self.last_arr, self.last_link = arr, link
         try:
             sent, failed, _ = pk["body"].split(b",", 2)
@@ -612,6 +631,8 @@ class TextFlow:
         if mid in self.msgs:
             self.dups += 1
             return {"new": False, "id": mid}
+        if self.max_id < 0:
+            self.max_id = mid - 1       # the first message we see is the start, not a gap of everything before it
         delivery = arr - pk["ts"]
         self.msgs[mid] = {"arr": arr, "delivery_ms": delivery, "retx": bool(pk["flags"] & F_RETX), "link": link}
         for i in range(self.max_id + 1, mid):

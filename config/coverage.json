@@ -1,0 +1,31 @@
+{
+  "_comment": "Radio environment for the Metro ride. Each network has one or more cells (positions in metres along the route). Signal in dBm is ref_dbm_1m - 10 * exponent * log10(distance), with distance never below min_distance_m, plus a small deterministic fade that depends only on position, so two runs of the same ride see the same signal. Dead zones subtract extra_loss_db from every network (a tunnel shields all of them). Below usable_dbm the core router drops everything to and from the mobile node on that link. The model is ours, it is not taken from a standard.",
+  "usable_dbm": -100,
+  "bars_dbm": [-70, -80, -90, -95],
+  "min_distance_m": 20,
+  "tick_ms": 100,
+  "report_interval_ms": 200,
+  "speed_mps": 25,
+  "fading": { "amp_db": 4, "wavelengths_m": [23, 9], "phases": { "home": 0.3, "fa1": 1.7, "fa2": 2.9, "fa3": 4.1 } },
+  "networks": {
+    "home": { "label": "Home Network", "ref_dbm_1m": -30, "exponent": 3, "cells": [0] },
+    "fa1":  { "label": "Campus Wi-Fi", "ref_dbm_1m": -26, "exponent": 3, "cells": [300] },
+    "fa2":  { "label": "Metro LTE cell", "ref_dbm_1m": -22, "exponent": 3, "cells": [740, 1600] },
+    "fa3":  { "label": "Airport hotspot", "ref_dbm_1m": -22, "exponent": 3, "cells": [1990] }
+  },
+  "dead_zones": [
+    { "name": "Metro tunnel", "from_m": 950, "to_m": 1450, "extra_loss_db": 70, "ramp_m": 20 }
+  ],
+  "route": {
+    "name": "Metro ride",
+    "length_m": 2150,
+    "waypoints": [
+      { "name": "Home", "at_m": 0, "link": "home" },
+      { "name": "Campus", "at_m": 300, "link": "fa1" },
+      { "name": "Station A", "at_m": 740, "link": "fa2" },
+      { "name": "Tunnel", "at_m": 1200, "link": null },
+      { "name": "Station B", "at_m": 1600, "link": "fa2" },
+      { "name": "Airport", "at_m": 1990, "link": "fa3" }
+    ]
+  }
+}
