@@ -29,6 +29,13 @@ const HOST = topo.localhost || '127.0.0.1';
 const G = topo.gateway;
 const DIST = path.join(ROOT, 'frontend', 'dist');
 const scenarios = loadScenarios(path.join(path.dirname(CONFIG), 'scenarios'));
+// extra config sets, published to the browser so the UI never repeats a number
+const CONF_DIR = path.dirname(CONFIG);
+const extraConfig = {};
+for (const [key, file] of [['qos_targets', 'qos_targets.json'], ['traffic', 'traffic.json'], ['coverage', 'coverage.json'],
+  ['resilience', 'resilience.json']]) {
+  try { extraConfig[key] = JSON.parse(fs.readFileSync(path.join(CONF_DIR, file), 'utf8')); } catch { /* optional */ }
+}
 const startedAt = Date.now();
 let resetAt = startedAt; // the console clock shows time since the last Reset
 
@@ -42,6 +49,12 @@ let outbox = [];
 const clients = new Set();
 
 const metrics = new Metrics((ev) => ingest({ ts: Date.now(), ...ev }));
+// QoS timeline (one point per report from the mobile node), coverage samples and finished runs
+const QOS_MAX = 6000;
+const COV_MAX = 2500;
+let qosTimeline = [];
+let covSeries = [];
+let runs = {};
 
 const ctl = dgram.createSocket('udp4');
 ctl.on('error', (e) => console.error('[gateway] control socket:', e.message));
@@ -70,6 +83,8 @@ function resetAll() {
   ring = [];
   pcapRing = [];
   metrics.reset();
+  qosTimeline = [];
+  covSeries = [];
   resetAt = Date.now();
   queue({ type: 'reset', features, resetAt });
   ingest({ ts: Date.now(), node: 'GATEWAY', kind: 'config', summary: 'simulation reset to topology defaults' });
@@ -98,6 +113,24 @@ function ingest(ev) {
   }
   if (ev.kind === 'hello' && topo.nodes[ev.node]) {
     sendCommand(ev.node, 'set', features); // bring a (re)started agent in line with the UI
+  }
+  if (ev.kind === 'qos_point') {
+    qosTimeline.push(ev);
+    if (qosTimeline.length > QOS_MAX) qosTimeline.splice(0, qosTimeline.length - QOS_MAX);
+    queue({ type: 'event', ev });
+    return;
+  }
+  if (ev.kind === 'coverage') {
+    covSeries.push(ev);
+    if (covSeries.length > COV_MAX) covSeries.splice(0, covSeries.length - COV_MAX);
+    queue({ type: 'event', ev });
+    return;
+  }
+  if (ev.kind === 'qos_run') {
+    const run = { ...ev.run, features: { ...features }, cn: states.CN?.flows, ha: states.HA?.hold, router: states.ROUTER?.coverage };
+    runs[run.label] = run;
+    queue({ type: 'run', run });
+    ev.run = undefined;
   }
   if (ev.kind === 'packet' && ev.ip && ev.hex) {
     pcapRing.push({ ts: ev.ts, data: Buffer.from(ev.hex, 'hex') });
@@ -146,7 +179,23 @@ function hello() {
     type: 'hello', startedAt, resetAt, topology: publicTopology(), features, states,
     scenarios: scenarios.map(({ id, title, description }) => ({ id, title, description })),
     scenario: runner.status(), events: ring.slice(-1500), metrics: metrics.snapshot(),
+    config: extraConfig, qos: qosTimeline.slice(-3000), coverage: covSeries.slice(-1500), runs,
   };
+}
+
+// One row per QoS report. Handoff numbers come from the mobile node's own handoff_id stamp.
+function qosCsv() {
+  const cols = ['time_s', 'link', 'signal_dbm', 'in_blackout', 'handoff_id',
+    'voice_delay_ms', 'voice_delay_p95_ms', 'voice_jitter_ms', 'voice_loss_pct', 'voice_mouth_to_ear_ms', 'voice_r', 'voice_mos', 'voice_verdict',
+    'video_delay_ms', 'video_delay_p95_ms', 'video_jitter_ms', 'video_loss_pct', 'video_freeze_ms', 'video_freezes', 'video_frames_lost', 'video_verdict',
+    'chat_delivered', 'chat_last_delivery_ms', 'chat_waiting', 'chat_verdict'];
+  const t0 = qosTimeline.length ? qosTimeline[0].t : 0;
+  const v = (x) => (x === null || x === undefined ? '' : x);
+  const rows = qosTimeline.map((p) => [((p.t - t0) / 1000).toFixed(2), p.link, v(p.signal), p.blackout ? 1 : 0, p.handoff_id,
+    v(p.voice.delay), v(p.voice.p95), v(p.voice.jitter), v(p.voice.loss), v(p.voice.m2e), v(p.voice.r), v(p.voice.mos), p.voice.level,
+    v(p.video.delay), v(p.video.p95), v(p.video.jitter), v(p.video.loss), v(p.video.freeze_ms), v(p.video.freezes), v(p.video.frames_lost), p.video.level,
+    v(p.text.delivered), v(p.text.last), v(p.text.waiting), p.text.level]);
+  return [cols.join(','), ...rows.map((r) => r.join(','))].join('\n') + '\n';
 }
 
 const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.svg': 'image/svg+xml',
@@ -160,6 +209,12 @@ function handleHttp(req, res) {
     const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
     res.writeHead(200, { 'Content-Type': 'application/vnd.tcpdump.pcap',
       'Content-Disposition': `attachment; filename="mobileip-${stamp}.pcap"`, 'Content-Length': body.length });
+    return res.end(body);
+  }
+  if (url.pathname === '/export/qos.csv') {
+    const body = qosCsv();
+    const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+    res.writeHead(200, { 'Content-Type': 'text/csv', 'Content-Disposition': `attachment; filename="qos-timeline-${stamp}.csv"` });
     return res.end(body);
   }
   if (url.pathname === '/api/state') {
@@ -196,7 +251,8 @@ wss.on('connection', (ws) => {
       const s = scenarios.find((x) => x.id === m.id);
       if (s) runner.run(s, Number(m.start) || 0).catch((e) => console.error('[gateway] scenario error', e));
     } else if (m.type === 'scenario_stop') runner.stop('stopped by user');
-    else if (m.type === 'clear') { ring = []; pcapRing = []; metrics.reset(); queue({ type: 'cleared' }); }
+    else if (m.type === 'clear') { ring = []; pcapRing = []; metrics.reset(); qosTimeline = []; covSeries = []; runs = {}; queue({ type: 'cleared' }); }
+    else if (m.type === 'clear_runs') { runs = {}; queue({ type: 'runs_cleared' }); }
   });
 });
 

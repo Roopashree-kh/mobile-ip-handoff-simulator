@@ -1,0 +1,41 @@
+{
+  "_comment": "The three application flows the correspondent runs, the playout buffer model, QoS reporting and the adaptive sender. Ports are on the correspondent (cn_port) and on the mobile node (mn_port). Nothing else in the code hard-codes a port or a rate.",
+  "report_interval_ms": 250,
+  "tick_ms": 100,
+  "window_s": 5,
+  "inspector_sample_every": 10,
+  "flow_header_bytes": 28,
+  "flows": {
+    "voice": {
+      "flow_id": 1, "kind": "voice", "title": "Voice call", "cn_port": 5010, "mn_port": 6010,
+      "codec": "G.711", "packet_interval_ms": 20, "payload_bytes": 160,
+      "interruption_min_ms": 100,
+      "playout": { "mode": "adaptive", "alpha": 0.9, "k": 4, "min_buffer_ms": 20, "max_buffer_ms": 200, "fixed_ms": 80, "clamp_ms": 600 }
+    },
+    "video": {
+      "flow_id": 2, "kind": "video", "title": "Video", "cn_port": 5011, "mn_port": 6011,
+      "max_packet_payload": 1000, "key_frame_every_s": 1, "size_jitter_pct": 20,
+      "levels": [
+        { "name": "high", "fps": 25, "key_bytes": 9000, "delta_bytes": 1800 },
+        { "name": "medium", "fps": 15, "key_bytes": 6000, "delta_bytes": 1200 },
+        { "name": "low", "fps": 10, "key_bytes": 3500, "delta_bytes": 700 }
+      ],
+      "start_level": 0,
+      "freeze_min_ms": 200, "freeze_frames": 3,
+      "interruption_min_ms": 200,
+      "playout": { "mode": "adaptive", "alpha": 0.9, "k": 4, "min_buffer_ms": 40, "max_buffer_ms": 600, "fixed_ms": 250, "clamp_ms": 1500 }
+    },
+    "text": {
+      "flow_id": 3, "kind": "text", "title": "Chat", "cn_port": 5012, "mn_port": 6012,
+      "message_every_s": [3, 5], "message_bytes": [60, 140],
+      "ack_timeout_ms": 1000, "ack_timeout_max_ms": 4000, "max_retries": 14
+    }
+  },
+  "feedback": {
+    "cn_port": 5013, "mn_port": 6013, "interval_ms": 500
+  },
+  "adaptive_sender": {
+    "down_loss_pct": 4, "up_loss_pct": 1, "weak_signal_dbm": -92,
+    "down_dwell_ms": 1000, "up_dwell_ms": 4000, "feedback_timeout_ms": 2000
+  }
+}

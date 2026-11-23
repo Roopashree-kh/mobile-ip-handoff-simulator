@@ -6,6 +6,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { onData, useStore } from '../../lib/store.js';
 import { PLACES } from '../../lib/story.js';
 import { useNow } from '../ui.jsx';
+import QualityBadge from './QualityBadge.jsx';
 
 const FINAL_MS = 5000; // a missing frame still absent after this long is counted for good
 
@@ -101,6 +102,7 @@ export default function StoryPhone() {
 
   return (
     <div className="flex flex-col gap-4">
+      <QualityBadge />
       <div className="mx-auto w-full max-w-[560px] rounded-[30px] bg-[#23272e] p-[14px] pl-[30px] relative shadow-[0_2px_6px_rgba(0,0,0,0.18)]">
         <span className="absolute left-[11px] top-1/2 -translate-y-1/2 w-2 h-2 rounded-full bg-[#3d434d]" />
         <div className="relative rounded-[14px] overflow-hidden aspect-video bg-black">

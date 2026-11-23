@@ -65,6 +65,17 @@ class Topology:
                 return name
         return None
 
+    def extra(self, name):
+        """Load a sibling config file such as traffic.json, qos_targets.json or coverage.json.
+
+        They live next to topology.json so MIP_CONFIG moves the whole set together."""
+        cache = self.__dict__.setdefault("_extra", {})
+        if name not in cache:
+            base = os.path.dirname(self.path or DEFAULT_PATH)
+            with open(os.path.join(base, name), "r", encoding="utf-8") as f:
+                cache[name] = json.load(f)
+        return cache[name]
+
     def agent_for_link(self, link):
         """The mobility agent (HA or FA) that serves a link, or None."""
         for n, v in self.nodes.items():

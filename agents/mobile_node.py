@@ -21,7 +21,7 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from mip import auth, encap, ipv4, link  # noqa: E402
+from mip import auth, encap, ipv4, link, qosmgr  # noqa: E402
 from mip import config as cfgmod  # noqa: E402
 from mip import messages as m  # noqa: E402
 from mip.node import Node  # noqa: E402
@@ -58,6 +58,7 @@ class MobileNode(Node):
         self.last_solicit = 0
         self.last_request = None
         self.demo = None
+        self.qos = qosmgr.QosManager(self, topo)
         self.reset_stats()
 
     def reset_stats(self):
@@ -65,11 +66,17 @@ class MobileNode(Node):
         self.max_seq = -1
         self.stats = {"rx": 0, "dup": 0, "lost_total": 0, "replies_sent": 0, "last_latency_ms": None}
         self.pings = {}
+        if hasattr(self, "qos"):
+            self.qos.reset()
 
     # ---- lifecycle -------------------------------------------------------------------
     def start(self):
         self.attach(self.ncfg["initial_link"], initial=True)
         self.every(lambda: 0.1, self.lifetime_check)
+        t = self.qos.t
+        self.every(lambda: t["tick_ms"] / 1000.0, self.qos.tick)
+        self.every(lambda: t["report_interval_ms"] / 1000.0, self.qos.report)
+        self.every(lambda: t["feedback"]["interval_ms"] / 1000.0, self.qos.feedback)
 
     def attach(self, link_name, initial=False):
         """Associate with a link: the physical part of a handoff."""
@@ -132,6 +139,8 @@ class MobileNode(Node):
                 return
             if dport == self.my_port:
                 return self.on_reply(h, data)
+            if dport in self.qos.by_port and h.dst == self.home:
+                return self.qos.on_packet(dport, h, data, self.link)
             if dport == self.cn["mn_port"] and h.dst == self.home:
                 return self.on_stream(h, sport, data, payload)
 
@@ -581,6 +590,11 @@ class MobileNode(Node):
         elif cmd == "clock_skew":
             self.idgen.skew_s = float(args.get("seconds", 0))
             self.tel.emit("config", "MN clock skew set to %.0f s" % self.idgen.skew_s)
+        elif cmd == "qos_summary":
+            rec = self.qos.summary(args.get("label", "run"))
+            self.tel.emit("qos_run", "QoS summary for run %s" % rec["label"], run=rec)
+        elif cmd == "qos_reset":
+            self.qos.reset()
         elif cmd == "reset":
             self.reset_stats()
             self.handoff = None
@@ -663,7 +677,7 @@ class MobileNode(Node):
                 "pending": {"attempts": self.reg["attempts"] + 1, "coa": self.reg["coa"], "dereg": self.reg["dereg"]}
                 if self.reg else None, "stats": self.stats, "max_seq": self.max_seq,
                 "replay": self.idgen.mode, "algorithm": self.features.get("movement_detection"),
-                "colocated": self.colocated(), "prev_fa": self.prev_fa}
+                "colocated": self.colocated(), "prev_fa": self.prev_fa, "qos": self.qos.last}
 
 
 def main():

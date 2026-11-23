@@ -153,12 +153,18 @@ export default function StoryMode() {
   const [intro, setIntro] = useState(() => !localStorage.getItem('mip.story.intro'));
   const { current, history } = useNarrator(captions);
 
-  // Story mode always has the video running
+  // Story mode always has the video running, and the call and chat flows beside it
   useEffect(() => {
     if (!connected || !cn || cn.streaming || scenario) return undefined;
     const t = setTimeout(() => command('CN', 'stream_start'), 800);
     return () => clearTimeout(t);
   }, [connected, cn?.streaming, !!cn, !!scenario]);
+  const flowsOn = !!cn?.flows?.voice?.running;
+  useEffect(() => {
+    if (!connected || !cn || flowsOn || scenario) return undefined;
+    const t = setTimeout(() => command('CN', 'flows_start'), 1200);
+    return () => clearTimeout(t);
+  }, [connected, flowsOn, !!cn, !!scenario]);
 
   return (
     <div className="flex-1 min-h-0 p-2 flex flex-col gap-2 text-[15px]">

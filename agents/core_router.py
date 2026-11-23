@@ -36,6 +36,10 @@ class CoreRouter(Node):
     def __init__(self, topo):
         super().__init__("ROUTER", topo)
         self.port_to_node = {v["data_port"]: n for n, v in topo.nodes.items()}
+        tr = topo.extra("traffic.json")
+        self.sample_n = int(tr.get("inspector_sample_every", 1))
+        self.sampled = {tr["flows"][k]["flow_id"] for k in ("voice", "video")}
+        self.sample_cnt = {}
         self.reset_state()
 
     def reset_state(self):
@@ -249,6 +253,13 @@ class CoreRouter(Node):
             self.counters["dropped"] += 1
             key = (reason or "?").split(":")[0]
             self.counters["by_reason"][key] = self.counters["by_reason"].get(key, 0) + 1
+        if self.sample_n > 1:
+            # voice and video are 100 packets a second: show one in sample_n in the inspector
+            i = datagram.find(b"MIPQ", 20)
+            if i > 0 and i + 4 < len(datagram) and datagram[i + 4] in self.sampled:
+                n = self.sample_cnt[datagram[i + 4]] = self.sample_cnt.get(datagram[i + 4], 0) + 1
+                if n % self.sample_n:
+                    return
         try:
             d = decode.dissect(datagram)
         except Exception as e:  # never let the dissector break forwarding

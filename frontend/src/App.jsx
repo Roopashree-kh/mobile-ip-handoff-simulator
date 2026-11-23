@@ -12,6 +12,7 @@ import TopologyMap from './components/TopologyMap.jsx';
 import AgentPanel from './components/AgentPanel.jsx';
 import PacketInspector from './components/PacketInspector.jsx';
 import AnalyticsDrawer from './components/AnalyticsDrawer.jsx';
+import QualityDrawer from './components/QualityDrawer.jsx';
 import StoryMode from './components/story/StoryMode.jsx';
 import { useStore } from './lib/store.js';
 
@@ -63,6 +64,7 @@ function Expert() {
         </PanelGroup>
       </div>
       <AnalyticsDrawer />
+      <QualityDrawer />
     </>
   );
 }

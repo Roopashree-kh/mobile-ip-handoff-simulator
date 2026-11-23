@@ -7,6 +7,9 @@ const MAX_PACKETS = 4000;
 const MAX_EVENTS = 600;
 const MAX_LATENCY = 1500;
 const MAX_CAPTIONS = 40;
+const MAX_QOS = 3000;
+const MAX_COV = 1500;
+const MAX_MARKS = 300;
 
 const initial = {
   mode: 'story', // 'story' (beginner screen, default) or 'expert' (full console)
@@ -35,6 +38,12 @@ const initial = {
   learn: false,
   walkthrough: [],
   analyticsOpen: false,
+  qualityOpen: false,
+  config: {},      // qos_targets, traffic, coverage, resilience as published by the gateway
+  qos: [],         // one point per QoS report from the mobile node
+  qosMarks: [],    // interruptions and outages, drawn on the charts
+  cover: [],       // coverage samples from the core router
+  runs: {},        // finished QoS runs by label, for the side by side result view
   lastNo: 0,
 };
 
@@ -97,6 +106,11 @@ export function initFromHello(h) {
     phases: h.metrics?.phases || [],
     phase: h.metrics?.phase || null,
     buffered: [],
+    config: h.config || {},
+    qos: h.qos || [],
+    cover: h.coverage || [],
+    runs: h.runs || {},
+    qosMarks: [],
     lastNo: 0,
   };
   // metrics already arrived as a snapshot above, so skip the raw metric events in the ring
@@ -126,8 +140,16 @@ export function applyItems(items, animate = true) {
   const walk = [];
   const caps = [];
   const dataList = [];
+  let qosPts = null;
+  let cover = null;
+  let marks = null;
 
   for (const it of items) {
+    if (it.type === 'run') {
+      patch.runs = { ...(patch.runs || s.runs), [it.run.label]: it.run };
+      continue;
+    }
+    if (it.type === 'runs_cleared') { patch.runs = {}; continue; }
     if (it.type === 'state') {
       states = states || { ...s.states };
       states[it.node] = it.state;
@@ -140,6 +162,10 @@ export function applyItems(items, animate = true) {
     }
     if (it.type === 'phase') { patch.phase = it.phase; continue; }
     if (it.type === 'reset' || it.type === 'cleared') {
+      qosPts = [];
+      cover = [];
+      marks = [];
+      if (it.type === 'cleared') patch.runs = {};
       packets = [];
       events = [];
       latency = [];
@@ -159,6 +185,20 @@ export function applyItems(items, animate = true) {
     // the hello snapshot and the first batch can overlap; event numbers are monotonic
     if (ev.no <= (patch.lastNo ?? s.lastNo)) continue;
     patch.lastNo = ev.no;
+    if (ev.kind === 'qos_point') {
+      qosPts = qosPts || s.qos.slice();
+      qosPts.push(ev);
+      continue;
+    }
+    if (ev.kind === 'coverage') {
+      cover = cover || s.cover.slice();
+      cover.push(ev);
+      continue;
+    }
+    if (ev.kind === 'qos_event') {
+      marks = marks || s.qosMarks.slice();
+      marks.push(ev);
+    }
     if (animate && (ev.kind !== 'packet' || ev.verdict === 'dropped')) {
       const c = captionFor(ev, s);
       if (c) caps.push({ id: ++captionId, ...c });
@@ -206,6 +246,9 @@ export function applyItems(items, animate = true) {
       }
     }
   }
+  if (qosPts) patch.qos = qosPts.length > MAX_QOS ? qosPts.slice(-MAX_QOS) : qosPts;
+  if (cover) patch.cover = cover.length > MAX_COV ? cover.slice(-MAX_COV) : cover;
+  if (marks) patch.qosMarks = marks.length > MAX_MARKS ? marks.slice(-MAX_MARKS) : marks;
   if (packets) patch.packets = packets.length > MAX_PACKETS ? packets.slice(-MAX_PACKETS) : packets;
   if (events) patch.events = events.length > MAX_EVENTS ? events.slice(-MAX_EVENTS) : events;
   if (latency) patch.latency = latency.length > MAX_LATENCY ? latency.slice(-MAX_LATENCY) : latency;

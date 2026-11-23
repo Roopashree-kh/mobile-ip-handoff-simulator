@@ -183,6 +183,30 @@ def _udp(d, p, end, src, dst, c):
                                     _f("Padding", "%d bytes" % (len(body) - 17), p + 25, max(0, len(body) - 17))]})
         c.protocol += "UDP"
         c.info = "Stream seq=%d %d->%d len=%d (%s)" % (seq, sp, dp, len(body), route)
+    elif body[:4] == b"MIPQ" and len(body) >= 28:
+        from . import qos as _q
+        pk = _q.unpack(body)
+        names = {1: "Voice", 2: "Video", 3: "Chat message", 4: "Chat ack"}
+        nm = names.get(pk["ftype"], "Flow")
+        c.layers.append({"name": "%s flow packet (simulator application payload)" % nm, "off": p + 8, "len": len(body),
+                         "fields": [_f("Magic", "MIPQ", p + 8, 4), _f("Flow id", str(pk["flow_id"]), p + 12, 1),
+                                    _f("Type", "%d, %s" % (pk["ftype"], nm), p + 13, 1),
+                                    _f("Flags", "0x%02x%s" % (pk["flags"], " key frame" if pk["flags"] & 1 else
+                                                              " retransmission" if pk["flags"] & 2 else ""), p + 14, 1),
+                                    _f("CN route tag", str(pk["tag"]), p + 15, 1), _f("Sequence", str(pk["seq"]), p + 16, 4),
+                                    _f("Send time (ms)", "%.1f" % pk["ts"], p + 20, 8),
+                                    _f("Packet interval (ms)", "%.1f" % pk["interval_ms"], p + 28, 2),
+                                    _f("Frame id", str(pk["frame_id"]), p + 30, 4),
+                                    _f("Fragment", "%d of %d" % (pk["frag_idx"] + 1, pk["frag_cnt"]), p + 34, 2),
+                                    _f("Media payload", "%d bytes" % (len(body) - 28), p + 36, max(0, len(body) - 28))]})
+        c.protocol += "UDP"
+        extra = (" frame %d frag %d/%d" % (pk["frame_id"], pk["frag_idx"] + 1, pk["frag_cnt"])) if pk["ftype"] == 2 else ""
+        c.info = "%s seq=%d%s %d->%d len=%d" % (nm, pk["seq"], extra, sp, dp, len(body))
+    elif body[:4] == b"MIPF":
+        c.layers.append({"name": "Receiver feedback (simulator application payload)", "off": p + 8, "len": len(body),
+                         "fields": [_f("Magic", "MIPF", p + 8, 4)]})
+        c.protocol += "UDP"
+        c.info = "Receiver feedback %d->%d" % (sp, dp)
     elif body[:4] == b"MIPR":
         seq = struct.unpack("!I", body[4:8])[0]
         c.layers.append({"name": "Stream reply (simulator application payload)", "off": p + 8, "len": len(body),

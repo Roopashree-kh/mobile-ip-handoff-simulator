@@ -1,0 +1,91 @@
+{
+  "_comment": "Quality targets used by the mobile node to judge every flow. Each check has pass_at (the objective), hard_at (a limit past which the flow is Poor, null when the standard gives none) and a source. verified=true means the number was read from the ITU-T or IETF document itself. verified=false means it is our own project policy or could not be read from the document. A check that misses pass_at but stays inside hard_at makes the flow Fair. A check past hard_at makes it Poor.",
+  "standards": {
+    "G.1010": "ITU-T G.1010 (11/2001), End-user multimedia QoS categories, Appendix I, Tables I.1 and I.2",
+    "Y.1541": "ITU-T Y.1541 (12/2011), Network performance objectives for IP-based services, Table 1 (classes 0 to 5) and Table 3 (provisional classes 6 and 7)",
+    "G.114": "ITU-T G.114 (05/2003), One-way transmission time, clause 4",
+    "G.107": "ITU-T G.107 (06/2015), The E-model, clause 7 and Annex B",
+    "G.113": "ITU-T G.113 (09/2024), Transmission impairments due to speech processing, Appendix I",
+    "RFC 3550": "IETF RFC 3550, RTP, section 6.4.1 and appendix A.8"
+  },
+  "window_s": 5,
+  "stall_poor_ms": 1000,
+  "emodel": {
+    "ro": { "value": 93.2, "source": "ITU-T G.107 clause 7.7 Table 3 (default R)", "verified": true },
+    "ie": { "value": 0, "source": "ITU-T G.113 Appendix I, G.711", "verified": true },
+    "bpl": { "value": 25.1, "source": "ITU-T G.113 Appendix I, G.711 with packet loss concealment (4.3 without)", "verified": true },
+    "idd_mt_ms": { "value": 100, "source": "ITU-T G.107 Table 1, default mT", "verified": true },
+    "idd_st": { "value": 1, "source": "ITU-T G.107 Table 1, default sT", "verified": true },
+    "codec_delay_ms": { "value": 20, "source": "G.711 with 20 ms packets: one packet of sampling delay. Our simplification, not a table value", "verified": false },
+    "burst_r_min": { "value": 1, "source": "Our simplification: BurstR is held at 1 or above so a total blackout cannot divide by zero", "verified": false }
+  },
+  "mos_bands": [
+    { "r_min": 90, "mos": 4.34, "label": "Very satisfied", "source": "ITU-T G.107 Table B.1 (from G.109)", "verified": true },
+    { "r_min": 80, "mos": 4.03, "label": "Satisfied", "source": "ITU-T G.107 Table B.1", "verified": true },
+    { "r_min": 70, "mos": 3.60, "label": "Some users dissatisfied", "source": "ITU-T G.107 Table B.1", "verified": true },
+    { "r_min": 60, "mos": 3.10, "label": "Many users dissatisfied", "source": "ITU-T G.107 Table B.1", "verified": true },
+    { "r_min": 50, "mos": 2.58, "label": "Nearly all users dissatisfied", "source": "ITU-T G.107 Table B.1", "verified": true }
+  ],
+  "flows": {
+    "voice": {
+      "title": "Voice call",
+      "g1010_category": "Conversational voice (Table I.1)",
+      "y1541_class": 0,
+      "checks": {
+        "mouth_to_ear_delay_ms": {
+          "label": "One-way delay, mouth to ear", "unit": "ms", "direction": "max", "pass_at": 150, "hard_at": 400,
+          "source": "ITU-T G.114 clause 4 (150 ms transparent, 400 ms planning limit) and G.1010 Table I.1 (under 150 ms preferred, under 400 ms limit)", "verified": true },
+        "network_delay_ms": {
+          "label": "Mean network delay", "unit": "ms", "direction": "max", "pass_at": 100, "hard_at": null,
+          "source": "ITU-T Y.1541 Table 1, class 0, IPTD upper bound on the mean", "verified": true },
+        "jitter_ms": {
+          "label": "Jitter (RFC 3550)", "unit": "ms", "direction": "max", "pass_at": 50, "hard_at": null,
+          "source": "ITU-T Y.1541 Table 1, class 0, IPDV 50 ms. Y.1541 defines IPDV as a 1-10^-3 quantile minus the minimum delay. We compare RFC 3550 interarrival jitter to it, see PROTOCOL_NOTES", "verified": true },
+        "loss_pct": {
+          "label": "Packet loss, including late packets", "unit": "%", "direction": "max", "pass_at": 0.1, "hard_at": 3,
+          "source": "ITU-T Y.1541 Table 1, class 0, IPLR 10^-3 (0.1 per cent) and G.1010 Table I.1, conversational voice, under 3 per cent PLR", "verified": true },
+        "mos": {
+          "label": "Listening quality, MOS (E-model)", "unit": "", "direction": "min", "pass_at": 4.0, "hard_at": 3.1,
+          "source": "ITU-T G.107 Table B.1: R 80 (MOS 4.03) satisfied, R 60 (MOS 3.10) many users dissatisfied. Using 4.0 as the round number", "verified": true }
+      },
+      "unused": {
+        "g1010_delay_variation_ms": { "value": 1, "source": "ITU-T G.1010 Table I.1, conversational voice, delay variation under 1 ms. Not used for the verdict: it describes the arrival variation before a playout buffer removes it, and Y.1541 gives the network figure we use instead. This reasoning is ours", "verified": false }
+      }
+    },
+    "video": {
+      "title": "Video",
+      "g1010_category": "Videophone (Table I.1)",
+      "y1541_class": 1,
+      "checks": {
+        "playout_delay_ms": {
+          "label": "One-way delay incl. playout buffer", "unit": "ms", "direction": "max", "pass_at": 150, "hard_at": 400,
+          "source": "ITU-T G.1010 Table I.1, videophone, under 150 ms preferred, under 400 ms limit (long-term targets)", "verified": true },
+        "network_delay_ms": {
+          "label": "Mean network delay", "unit": "ms", "direction": "max", "pass_at": 400, "hard_at": null,
+          "source": "ITU-T Y.1541 Table 1, class 1, IPTD upper bound on the mean", "verified": true },
+        "jitter_ms": {
+          "label": "Jitter (RFC 3550)", "unit": "ms", "direction": "max", "pass_at": 50, "hard_at": null,
+          "source": "ITU-T Y.1541 Table 1, class 1, IPDV 50 ms (see the voice note on the definition)", "verified": true },
+        "loss_pct": {
+          "label": "Packet loss, including late packets", "unit": "%", "direction": "max", "pass_at": 0.1, "hard_at": 1,
+          "source": "ITU-T Y.1541 Table 1, class 1, IPLR 10^-3 and G.1010 Table I.1, videophone, under 1 per cent PLR", "verified": true },
+        "freeze_ms": {
+          "label": "Frozen picture in the last window", "unit": "ms", "direction": "max", "pass_at": 0, "hard_at": 1000,
+          "source": "Project policy. No standard gives a freeze limit", "verified": false }
+      }
+    },
+    "text": {
+      "title": "Chat",
+      "g1010_category": "Nearest row: e-mail server access (Table I.2). G.1010 has no instant messaging row",
+      "y1541_class": null,
+      "checks": {
+        "delivery_ms": {
+          "label": "Delivery time of a message", "unit": "ms", "direction": "max", "pass_at": 2000, "hard_at": 4000,
+          "source": "ITU-T G.1010 Table I.2, e-mail server access, 2 s preferred and 4 s acceptable. Used as the nearest row, text chat is not listed", "verified": true },
+        "lost_messages": {
+          "label": "Messages lost", "unit": "", "direction": "max", "pass_at": 0, "hard_at": 0,
+          "source": "G.1010 Figure 2 places Messaging in the error intolerant row. The exact zero-loss cell for e-mail in Table I.2 was not read, so this is project policy", "verified": false }
+      }
+    }
+  }
+}

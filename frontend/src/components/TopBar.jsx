@@ -120,6 +120,7 @@ export default function TopBar() {
       <div data-tip="Explain each protocol step with its RFC section">
         <Switch small checked={learn} onChange={setLearn} label={<span className="whitespace-nowrap">Learn mode</span>} />
       </div>
+      <button className="btn" onClick={() => setState({ qualityOpen: true })}><Icon name="chart" size={14} />Quality</button>
       <button className="btn" onClick={() => setState({ analyticsOpen: true })}><Icon name="chart" size={14} />Analytics</button>
       {status}
     </header>

@@ -17,7 +17,7 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from mip import auth, encap, ipv4  # noqa: E402
+from mip import auth, clock, encap, ipv4, qos, traffic  # noqa: E402
 from mip import config as cfgmod  # noqa: E402
 from mip import messages as m  # noqa: E402
 from mip.node import Node  # noqa: E402
@@ -33,6 +33,14 @@ class Correspondent(Node):
         self.rate = float(self.ncfg["stream_rate_pps"])
         self.streaming = False
         self.stream_timer = None
+        # voice, video and chat flows (config/traffic.json)
+        self.tcfg = topo.extra("traffic.json")
+        fl = self.tcfg["flows"]
+        self.flows = {"voice": traffic.VoiceSource(self, fl["voice"]),
+                      "video": traffic.VideoSource(self, fl["video"], self.tcfg["adaptive_sender"]),
+                      "text": traffic.TextSource(self, fl["text"])}
+        self.fb_cfg = self.tcfg["feedback"]
+        self.fb_rx = 0
         self.reset_state()
 
     def reset_state(self):
@@ -97,6 +105,37 @@ class Correspondent(Node):
         e = self.cache.get(home)
         return e if e and e["expires_at"] > self.now() else None
 
+    # ---- the three application flows ------------------------------------------------
+    def send_flow(self, fcfg, ftype, flags, seq, interval_ms, frame_id=0, frag_idx=0, frag_cnt=1, body=b"", ts_ms=None):
+        """Stamp one packet with the flow header and send it to the mobile node's home address."""
+        home = self.mn["home_address"]
+        entry = self.valid_entry(home)
+        hdr = qos.pack(fcfg["flow_id"], ftype, flags, 1 if entry else 0, seq,
+                       self.now_ms() if ts_ms is None else ts_ms, interval_ms, frame_id, frag_idx, frag_cnt)
+        dg = ipv4.build_udp_datagram(self.ip, home, fcfg["cn_port"], fcfg["mn_port"], hdr + body)
+        self.send_to_mn(dg, entry)
+
+    def start_flows(self, names=None):
+        for n, f in self.flows.items():
+            if names and n not in names:
+                continue
+            f.start()
+        self.tel.emit("stream", "CN starts %s" % ", ".join(names or self.flows), flows=list(names or self.flows))
+
+    def stop_flows(self):
+        for f in self.flows.values():
+            f.stop()
+        self.tel.emit("stream", "CN stops the voice, video and chat flows")
+
+    def on_feedback(self, data):
+        """MN report: sequence, signal in tenths of a dBm, video loss and voice loss in hundredths of a per cent."""
+        if len(data) < 15:
+            return
+        _, sig10, vloss, aloss, _f = struct.unpack("!IhHHB", data[4:15])
+        self.fb_rx += 1
+        sig = sig10 / 10.0 if sig10 != -32768 else None
+        self.flows["video"].on_feedback(max(vloss, 0) / 100.0, sig, clock.mono())
+
     # ---- receive -----------------------------------------------------------------
     def on_frame(self, kind, src_id, payload):
         try:
@@ -124,6 +163,13 @@ class Correspondent(Node):
             return
         if dport == self.reg_port():
             return self.on_mip(h, sport, data)
+        if dport == self.tcfg["flows"]["text"]["cn_port"] and data[:4] == qos.MAGIC:
+            pk = qos.unpack(data)
+            if pk and pk["ftype"] == qos.T_ACK:
+                self.flows["text"].on_ack(pk["seq"], pk["ts"])
+            return
+        if dport == self.fb_cfg["cn_port"] and data[:4] == b"MIPF":
+            return self.on_feedback(data)
         if dport == self.ncfg["stream_port"] and data[:4] == b"MIPR" and len(data) >= 16:
             seq, ts = struct.unpack("!Id", data[4:16])
             rtt = self.now_ms() - ts
@@ -196,14 +242,27 @@ class Correspondent(Node):
             self.stop_stream()
         elif cmd == "stream_rate":
             self.rate = max(1.0, min(200.0, float(args.get("rate", self.rate))))
+        elif cmd == "flows_start":
+            self.start_flows(args.get("flows"))
+        elif cmd == "flows_stop":
+            self.stop_flows()
+        elif cmd == "flows_reset":
+            self.stop_flows()
+            for f in self.flows.values():
+                f.reset()
         elif cmd == "reset":
             if self.streaming:
                 self.stop_stream()
+            for f in self.flows.values():
+                f.stop()
+                f.reset()
             self.reset_state()
 
     def on_features(self, changed):
         if "route_optimization" in changed and not changed["route_optimization"]:
             self.cache.clear()
+        if "adaptive_sender" in changed:
+            self.tel.emit("config", "CN adaptive video sender %s" % ("ON" if changed["adaptive_sender"] else "OFF"))
 
     def snapshot(self):
         now = self.now()
@@ -211,7 +270,9 @@ class Correspondent(Node):
                 "cache": [{"home": k, "coa": v["coa"], "lifetime": v["lifetime"], "encap": v["encap"],
                            "remaining": round(max(0, v["expires_at"] - now), 2), "expires_at": v["expires_at"] * 1000}
                           for k, v in self.cache.items()],
-                "route_optimization": bool(self.features.get("route_optimization"))}
+                "route_optimization": bool(self.features.get("route_optimization")),
+                "flows": {n: f.snapshot() for n, f in self.flows.items()}, "feedback_rx": self.fb_rx,
+                "adaptive_sender": bool(self.features.get("adaptive_sender"))}
 
 
 def main():
