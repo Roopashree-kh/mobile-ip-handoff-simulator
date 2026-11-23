@@ -445,18 +445,15 @@
           "cmd": "ride_start"
         },
         {
-          "wait": 29000,
-          "note": "Station A. The Metro network is strong here. The tunnel is next, about 20 seconds with no signal at all."
+          "wait": 29000
         },
         {
-          "wait": 9000
+          "note": "Station A. The Metro network is strong here. The tunnel is next, about 20 seconds with no signal at all.",
+          "wait": 33000
         },
         {
-          "wait": 21000
-        },
-        {
-          "wait": 25000,
-          "note": "Out of the tunnel. Look at what the 20 seconds cost: the call was silent, the video froze and the chat messages waited."
+          "note": "Out of the tunnel. Look at what the 20 seconds cost: the call was silent, the video froze and the chat messages waited.",
+          "wait": 24000
         },
         {
           "wait": 6000
@@ -499,18 +496,15 @@
           "cmd": "ride_start"
         },
         {
-          "wait": 29000,
-          "note": "Station A. Same train, same tunnel ahead, but now all five rescue tools are switched on."
+          "wait": 29000
         },
         {
-          "wait": 9000
+          "note": "Station A. Same train, same tunnel ahead, but now all five rescue tools are switched on.",
+          "wait": 33000
         },
         {
-          "wait": 21000
-        },
-        {
-          "wait": 25000,
-          "note": "Out of the tunnel. The call and the video still lost the tunnel, no tool can bring back sound nobody sent. The chat caught up at once."
+          "note": "Out of the tunnel. The call and the video still lost the tunnel, because sound and picture that old are useless by the time the phone is back. The chat caught up at once.",
+          "wait": 24000
         },
         {
           "wait": 6000
