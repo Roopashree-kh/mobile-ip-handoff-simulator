@@ -124,7 +124,7 @@ export default function MetroScene() {
       </g>
 
       {/* signal bars and the network name over the train */}
-      <g transform={`translate(${Math.max(80, Math.min(920, tx))},${GROUND - 176})`}>
+      <g transform={`translate(${Math.max(bw / 2 + 6, Math.min(1000 - bw / 2 - 6, tx))},${GROUND - 176})`}>
         <rect x={-bw / 2} y="-30" width={bw} height={both.length ? 68 : 54} rx="10" fill="#ffffff" stroke={dead ? '#b42318' : '#9aa9bb'} strokeWidth="2" />
         <Bars n={n} x={-bw / 2 + 10} y={-22} />
         <text x={-bw / 2 + 66} y="-6" fontSize="17" fontWeight="600" fill={dead ? '#b42318' : INK}>{name}</text>

@@ -12,6 +12,7 @@ const MAX_COV = 1500;
 const MAX_MARKS = 300;
 
 const initial = {
+  sceneAt: 0, // when Story last changed scene or started a ride, so its counters start afresh
   mode: 'story', // 'story' (beginner screen, default) or 'expert' (full console)
   captions: [], // Story mode narrator lines, plain English
   walkCue: null, // tour asks the Story scene to walk Priya somewhere

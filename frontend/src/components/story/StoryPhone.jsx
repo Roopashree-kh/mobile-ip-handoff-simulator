@@ -97,6 +97,8 @@ function Meter({ live, level, t }) {
   );
 }
 
+const SETTLE_MS = 4000;
+
 export default function StoryPhone() {
   const mn = useStore((s) => s.states.MN);
   const pt = useStore((s) => s.qos[s.qos.length - 1]);
@@ -104,7 +106,11 @@ export default function StoryPhone() {
   const th = useStore((s) => s.config?.qos_targets?.story) || { video_stall_ms: 300, call_silent_ms: 400, fresh_ms: 1500 };
   const link = useStore((s) => s.states.ROUTER?.attach?.MN || s.states.MN?.link || 'home');
   const resetAt = useStore((s) => s.resetAt);
+  const scene = useStore((s) => `${s.features.coverage ? 'metro' : 'day'}|${s.scenario?.id || ''}|${s.sceneAt || 0}`);
   const now = useNow(80);
+  // Frames lost counts from the start of the current scene. The measurement keeps running across scenes,
+  // so the count at the moment the scene (or scenario, or a Reset) changes is taken off.
+  const lostBase = useRef({ key: null, n: 0, since: 0 });
   const play = useRef({ frame: 0, last: 0 });
   const [, bump] = useState(0);
 
@@ -131,6 +137,15 @@ export default function StoryPhone() {
   const chatLevel = !pt || pt.text.delivered === 0 ? 'idle' : waiting ? 'fair' : 'good';
   const chatWord = chatLevel === 'idle' ? 'Quiet' : waiting ? 'Sending again' : 'Delivered';
 
+  // Switching scene restarts the three flows, which costs a few frames that nobody lost on the network.
+  // For the first SETTLE ms of a scene the count is held at zero, then real losses add up from there.
+  const lostNow = v?.frames_lost ?? 0;
+  const key = `${resetAt}|${scene}`;
+  const lb = lostBase.current;
+  if (lb.key !== key) { lb.key = key; lb.since = Date.now(); lb.n = lostNow; }
+  else if (Date.now() - lb.since < SETTLE_MS || lostNow < lb.n) lb.n = lostNow;
+  const lostShown = Math.max(0, lostNow - lb.n);
+
   const pl = PLACES[link] || PLACES.home;
   const state = mn?.state;
   const via = state === 'AT_HOME' ? 'Home Wi-Fi, directly'
@@ -147,7 +162,7 @@ export default function StoryPhone() {
           <Video frame={Math.floor(p.frame)} stalled={stalledVideo} idle={idleVideo} />
           <div className="absolute top-2 left-2 right-2 flex justify-between gap-2 text-[13px] font-semibold">
             <span className="px-2 py-0.5 rounded bg-white/90 text-noc-ink">Delay {v && v.delay !== null ? Math.round(v.delay) : '-'} ms</span>
-            <span className={`px-2 py-0.5 rounded bg-white/90 ${v?.frames_lost ? 'text-[#b42318]' : 'text-noc-ink'}`}>Frames lost: {v?.frames_lost ?? 0}</span>
+            <span className={`px-2 py-0.5 rounded bg-white/90 ${lostShown ? 'text-[#b42318]' : 'text-noc-ink'}`}>Frames lost: {lostShown}</span>
           </div>
           <div className="absolute left-2 bottom-2">
             <span className="px-2 py-0.5 rounded bg-white/90 inline-block"><Status level={vLevel} word={`Video: ${vWord}`} /></span>

@@ -1,6 +1,6 @@
 // Top bar: a plain white toolbar. Title, transport controls, speed, elapsed time, scenario,
 // Learn mode, Analytics, and the connection status at the far right.
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { setLearn, setState, useStore } from '../lib/store.js';
 import { pause, play, send, setFeature, step } from '../lib/ws.js';
 import { Icon, Switch } from './ui.jsx';
@@ -22,6 +22,45 @@ function Elapsed() {
     <span className="font-mono text-sm text-noc-ink tabular-nums w-14 text-center" data-tip="Elapsed since Reset" aria-label="Elapsed since Reset">
       {h ? `${h}:` : ''}{mm}:{ss}
     </span>
+  );
+}
+
+/** "More" menu: the less used controls (speed, Learn mode) so the bar never has to squeeze. */
+function MoreMenu({ scale, learn }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef(null);
+  useEffect(() => {
+    if (!open) return undefined;
+    const down = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
+    const key = (e) => { if (e.key === 'Escape') setOpen(false); };
+    document.addEventListener('mousedown', down);
+    document.addEventListener('keydown', key);
+    return () => { document.removeEventListener('mousedown', down); document.removeEventListener('keydown', key); };
+  }, [open]);
+  return (
+    <div className="relative shrink-0" ref={ref}>
+      <button className={`btn ${open ? 'btn-active' : ''}`} onClick={() => setOpen(!open)} aria-expanded={open} aria-haspopup="true"
+        data-tip="Speed and Learn mode">
+        More{(learn || scale !== 1) && <span className="w-2 h-2 rounded-full bg-acc" aria-label="a setting is on" />}
+        <Icon name="chevron" size={14} />
+      </button>
+      {open && (
+        <div className="absolute right-0 top-full mt-1 z-50 w-72 panel p-3 flex flex-col gap-3 shadow-lg" role="menu">
+          <div>
+            <div className="text-sm font-semibold text-noc-head1 mb-1.5">Speed</div>
+            <div className="seg" role="group" aria-label="Speed">
+              {SPEEDS.map((v) => (
+                <button key={v} aria-pressed={scale === v} onClick={() => setFeature({ time_scale: v })}>{v}x</button>
+              ))}
+            </div>
+            <div className="text-xs text-noc-dim mt-1.5">Slow-motion factor applied to every link delay.</div>
+          </div>
+          <div>
+            <Switch small checked={learn} onChange={setLearn} label={<span className="font-semibold text-noc-head1">Learn mode</span>} hint="Explain each protocol step with its RFC section." />
+          </div>
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -52,7 +91,7 @@ export default function TopBar() {
     <div className="seg shrink-0" role="group" aria-label="Screen">
       {[['story', 'Story'], ['expert', 'Expert']].map(([k, label]) => (
         <button key={k} className="!font-sans !text-sm !px-3" aria-pressed={mode === k} onClick={() => setState({ mode: k })}>
-          {label}<span className={mode === 'expert' ? 'hidden 2xl:inline' : ''}> mode</span></button>
+          {label}<span className={mode === 'expert' ? 'hidden min-[1700px]:inline' : ''}> mode</span></button>
       ))}
     </div>
   );
@@ -65,8 +104,8 @@ export default function TopBar() {
   const title = (
     <div className="flex items-center gap-2.5 min-w-0 shrink-0">
       <Logo />
-      <h1 className="text-base font-semibold text-noc-head1 whitespace-nowrap">Mobile IPv4 Handoff<span className="hidden 2xl:inline"> Simulator</span></h1>
-      <span className={`badge border-noc-line bg-noc-raised text-noc-dim font-mono ${mode === 'expert' ? 'hidden 2xl:inline-flex' : ''}`}>RFC 3344</span>
+      <h1 className="text-base font-semibold text-noc-head1 whitespace-nowrap">Mobile IPv4 Handoff<span className="hidden min-[1700px]:inline"> Simulator</span></h1>
+      <span className={`badge border-noc-line bg-noc-raised text-noc-dim font-mono ${mode === 'expert' ? 'hidden min-[1700px]:inline-flex' : ''}`}>RFC 3344</span>
     </div>
   );
 
@@ -96,19 +135,10 @@ export default function TopBar() {
       </div>
       {paused && <span className="badge border-warn-line bg-warn-soft text-warn font-mono">{buffered} held</span>}
       {sep}
-      <div className="flex items-center gap-2" data-tip="Slow-motion factor applied to every link delay">
-        <span className="hidden 2xl:inline text-sm text-noc-dim">Speed</span>
-        <div className="seg" role="group" aria-label="Speed">
-          {SPEEDS.map((v) => (
-            <button key={v} aria-pressed={scale === v} onClick={() => setFeature({ time_scale: v })}>{v}x</button>
-          ))}
-        </div>
-      </div>
-      {sep}
       <Elapsed />
       {sep}
-      <div className="flex items-center gap-2 min-w-0">
-        <select className="sel w-36 2xl:w-48" value={pick} onChange={(e) => setPick(e.target.value)} aria-label="Scenario">
+      <div className="flex items-center gap-2 shrink-0">
+        <select className="sel w-64 min-w-0" value={pick} onChange={(e) => setPick(e.target.value)} aria-label="Scenario">
           <option value="">Choose a scenario</option>
           {scenarios.map((s) => <option key={s.id} value={s.id} title={s.description}>{s.title}</option>)}
         </select>
@@ -116,14 +146,11 @@ export default function TopBar() {
           ? <button className="btn" onClick={() => send({ type: 'scenario_stop' })}><Icon name="stop" size={14} />Stop</button>
           : <button className="btn btn-primary" disabled={!pick} onClick={() => send({ type: 'scenario', id: pick })}><Icon name="play" size={14} />Run</button>}
       </div>
-      {sep}
-      <div data-tip="Explain each protocol step with its RFC section">
-        <Switch small checked={learn} onChange={setLearn} label={<span className="whitespace-nowrap">Learn mode</span>} />
-      </div>
       <button className="btn" onClick={() => setState({ qualityOpen: true })} data-tip="Quality of service: delay, jitter, loss, MOS, coverage and the Metro ride result" aria-label="Quality">
-        <Icon name="gauge" size={14} /><span className="hidden 2xl:inline">Quality</span></button>
+        <Icon name="gauge" size={14} /><span className="hidden xl:inline">Quality</span></button>
       <button className="btn" onClick={() => setState({ analyticsOpen: true })} data-tip="Analytics: latency, handoffs, encapsulation overhead" aria-label="Analytics">
-        <Icon name="chart" size={14} /><span className="hidden 2xl:inline">Analytics</span></button>
+        <Icon name="chart" size={14} /><span className="hidden xl:inline">Analytics</span></button>
+      <MoreMenu scale={scale} learn={learn} />
       {status}
     </header>
   );

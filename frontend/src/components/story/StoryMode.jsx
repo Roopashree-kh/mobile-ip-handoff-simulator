@@ -91,15 +91,15 @@ function Rescue({ f, k, e }) {
   );
 }
 
-/** Metro ride: start and stop the train, and the five rescue tools with a plain sentence each. */
-function MetroControls() {
-  const { cfg, f, keys } = useRescue();
+/** Metro ride: start, pause and compare buttons. They sit in the top row so they are never below the fold. */
+function MetroActions() {
+  const { f } = useRescue();
   const ride = useStore((s) => s.states.ROUTER?.coverage);
   const running = useStore((s) => s.scenario);
-  const length = cfg?.route?.length_m;
   const start = () => {
+    setState({ sceneAt: Date.now() });
     if (!f.coverage) setFeature({ coverage: true });
-    if (ride && length && (ride.pos >= 2000 || ride.pos < 5)) {
+    if (ride && (ride.pos >= 2000 || ride.pos < 5)) {
       if (ride.pos >= 2000) command('ROUTER', 'ride_reset');
       command('MN', 'qos_reset');   // a fresh ride starts its counters from zero
     }
@@ -107,20 +107,23 @@ function MetroControls() {
     command('ROUTER', 'ride_start');
   };
   return (
-    <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,2.6fr)] gap-2 shrink-0">
-      <Control title="Metro ride" hint="Home, Campus, Station A, a 20 second tunnel, Station B, Airport.">
-        <div className="flex flex-wrap gap-1.5">
-          <button className="btn btn-primary h-8 px-3 text-[14px]" disabled={!!running} onClick={start}>{ride?.riding ? 'Riding' : 'Start the ride'}</button>
-          <button className="btn h-8 px-3 text-[14px]" onClick={() => command('ROUTER', 'ride_stop')}>Pause</button>
-          <button className="btn h-8 px-3 text-[14px]" disabled={!!running} onClick={() => send({ type: 'scenario', id: '9_metro_compare' })}
-            title="Rides twice, tools off then all on, and shows both results in Expert mode">Compare</button>
-        </div>
-      </Control>
-      <div className="panel px-3 py-2.5 min-w-0">
-        <div className="text-[14px] 2xl:text-[15px] font-semibold text-noc-head1 mb-1.5">Rescue tools, switch them on one at a time</div>
-        <div className="grid grid-cols-2 xl:grid-cols-3 gap-x-4 gap-y-2">
-          {cfg && keys.map((k) => <Rescue key={k} f={f} k={k} e={cfg.features[k]} />)}
-        </div>
+    <div className="ml-auto flex items-center gap-2 shrink-0">
+      <button className="btn btn-primary h-10 px-5 text-[16px] font-semibold" disabled={!!running} onClick={start}>{ride?.riding ? 'Riding' : 'Start the ride'}</button>
+      <button className="btn h-10 px-3 text-[14px]" onClick={() => command('ROUTER', 'ride_stop')}>Pause</button>
+      <button className="btn h-10 px-3 text-[14px]" disabled={!!running} onClick={() => send({ type: 'scenario', id: '9_metro_compare' })}
+        title="Rides twice, tools off then all on, and shows both results in Expert mode">Compare</button>
+    </div>
+  );
+}
+
+/** The five rescue tools with a plain sentence each. */
+function MetroControls() {
+  const { cfg, f, keys } = useRescue();
+  return (
+    <div className="panel px-3 py-2.5 min-w-0 shrink-0">
+      <div className="text-[14px] 2xl:text-[15px] font-semibold text-noc-head1 mb-1.5">Rescue tools, switch them on one at a time</div>
+      <div className="grid grid-cols-3 xl:grid-cols-5 gap-x-4 gap-y-2">
+        {cfg && keys.map((k) => <Rescue key={k} f={f} k={k} e={cfg.features[k]} />)}
       </div>
     </div>
   );
@@ -221,15 +224,20 @@ export default function StoryMode() {
     <div className="flex-1 min-h-0 p-2 flex flex-col gap-2 text-[15px]">
       <div className="flex-1 min-h-0 grid grid-cols-[minmax(0,1fr)_30%] gap-2">
         <div className="min-w-0 min-h-0 flex flex-col gap-2">
+          <div className="panel shrink-0 flex items-center gap-4 px-3 py-2" role="group" aria-label="Choose a story">
+            <span className="text-[15px] font-semibold text-noc-head1">Story</span>
+            <div className="seg whitespace-nowrap shrink-0" role="group" aria-label="Story">
+              <button className="!font-sans !text-[15px] !h-9 !px-5" aria-pressed={!metro}
+                onClick={() => { setState({ sceneAt: Date.now() }); setFeature({ coverage: false }); command('ROUTER', 'ride_stop'); command('MN', 'qos_reset'); }}>Priya's day</button>
+              <button className="!font-sans !text-[15px] !h-9 !px-5" aria-pressed={metro}
+                onClick={() => { setState({ sceneAt: Date.now() }); setFeature({ coverage: true }); command('ROUTER', 'ride_reset'); command('MN', 'qos_reset'); command('CN', 'flows_start'); }}>Metro ride</button>
+            </div>
+            <span className="hidden min-[1500px]:inline text-[14px] text-noc-dim min-w-0">{metro ? 'Home, Campus, Station A, a 20 second tunnel, Station B, Airport.' : 'Walk between Home, Campus, Metro and Airport. Switch to Metro ride for the train and the tunnel.'}</span>
+            {metro && <MetroActions />}
+          </div>
           {intro && !metro && <Intro onClose={() => { localStorage.setItem('mip.story.intro', '1'); setIntro(false); }} />}
           <section className="panel flex-1 min-h-0 flex flex-col overflow-hidden">
-            <div className="h-10 shrink-0 flex items-center gap-5 px-4 border-b border-noc-line text-[14px] text-noc-dim">
-              <div className="seg" role="group" aria-label="Story">
-                <button className="!font-sans !text-[14px] !h-7" aria-pressed={!metro}
-                  onClick={() => { setFeature({ coverage: false }); command('ROUTER', 'ride_stop'); }}>Priya's day</button>
-                <button className="!font-sans !text-[14px] !h-7" aria-pressed={metro}
-                  onClick={() => { setFeature({ coverage: true }); command('ROUTER', 'ride_reset'); command('MN', 'qos_reset'); command('CN', 'flows_start'); }}>Metro ride</button>
-              </div>
+            <div className="h-9 shrink-0 flex items-center gap-5 px-4 border-b border-noc-line text-[14px] text-noc-dim">
               {!metro && <span className="hidden xl:inline">Click a place to walk there.</span>}
               {!metro && <span className="ml-auto flex items-center gap-2"><LegendEnvelope />Normal envelope</span>}
               {!metro && <span className="flex items-center gap-2"><LegendEnvelope tunnel />Envelope inside an envelope (tunnel)</span>}
